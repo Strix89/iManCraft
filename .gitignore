@@ -23,6 +23,11 @@
 scratch_*.py
 scratch_*.rs
 scratch/
+/tools/hashcat-6.2.6/
+target_hash.txt
+found_pin.txt
+PIN_TROVATO.txt
+NOTE_SBLOCCATE.txt
 
 # File di sistema e IDE
 Thumbs.db

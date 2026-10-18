@@ -35,6 +35,7 @@ fn main() {
         "export-reminders" => cmd_export_reminders(rest),
         "export-app" => cmd_export_app(rest),
         "snapshots" => cmd_snapshots(rest),
+        "unlock-notes" => cmd_unlock_notes(rest),
         other => {
             eprintln!("Comando sconosciuto: '{other}'. Digita 'imancraft-cli help' per la guida.");
             std::process::exit(1);
@@ -96,9 +97,13 @@ COMANDI DI ESPORTAZIONE:
     export-app <BACKUP_PATH> <BUNDLE_ID> --output <FILE.imazingapp> [--password <PWD>]
         Estrae il container di sandbox di una singola app nel formato compresso standard .imazingapp.
 
+    unlock-notes <BACKUP_PATH> <PASSWORD_OR_PIN> [--output <FILE.txt>]
+        Decifra e mostra a video tutte le note protette da password/PIN del backup, con opzione di salvataggio su file.
+
 ESEMPI:
     imancraft-cli list
     imancraft-cli info "C:\Backups\00008110-000A648136D0A01E"
+    imancraft-cli unlock-notes "C:\Backups\00008110-000A648136D0A01E" 12345678 --output note.txt
     imancraft-cli search "C:\Backups\iPhone14" "Mario Rossi"
     imancraft-cli extract "C:\Backups\iPhone14" --output "C:\Export_iPhone"
     imancraft-cli export-contacts "C:\Backups\iPhone14" --output "rubrica.vcf"
@@ -543,6 +548,53 @@ fn cmd_snapshots(args: &[String]) -> CliResult {
         );
     }
     println!();
+    Ok(())
+}
+
+fn cmd_unlock_notes(args: &[String]) -> CliResult {
+    let (b_path, pwd_opt, rest) = parse_backup_and_common(args)?;
+    let password = rest.first().cloned().or(pwd_opt).ok_or("Specifica la password o PIN. Uso: unlock-notes <backup_path> <password> [--output <file.txt>]")?;
+    let out_file = get_opt_arg(args, "--output");
+
+    let b = Backup::open(PathBuf::from(&b_path));
+    println!("Caricamento database NoteStore.sqlite da {}...", b.dir.display());
+    let (verifier, protected_notes) = b.notes_crypto_context()?;
+
+    if protected_notes.is_empty() {
+        println!("Nessuna nota protetta trovata nel backup.");
+        return Ok(());
+    }
+
+    println!("Trovate {} note protette. Tentativo di sblocco con '{}'...\n", protected_notes.len(), password);
+    let mut decrypted_count = 0;
+    let mut full_output = String::new();
+
+    for pn in &protected_notes {
+        match imancraft_core::notes_recovery::unlock_note(pn, verifier.as_ref(), &password) {
+            Ok(text) => {
+                decrypted_count += 1;
+                let header = format!("=======================================================\n📄 NOTA #{}: {}\nCartella: {}\n=======================================================\n", pn.note_pk, pn.title, pn.folder);
+                println!("{header}{text}\n");
+                full_output.push_str(&header);
+                full_output.push_str(&text);
+                full_output.push_str("\n\n");
+            }
+            Err(e) => {
+                println!("❌ Errore sblocco nota #{}: {e}", pn.note_pk);
+            }
+        }
+    }
+
+    if decrypted_count > 0 {
+        println!("✓ Decifrate con successo {decrypted_count}/{} note protette!", protected_notes.len());
+        if let Some(dest) = out_file {
+            std::fs::write(&dest, &full_output)?;
+            println!("Note salvate su file: {dest}");
+        }
+    } else {
+        println!("❌ Impossibile decifrare le note con la chiave specificata.");
+    }
+
     Ok(())
 }
 
