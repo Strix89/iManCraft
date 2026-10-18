@@ -1,6 +1,6 @@
 //! WhatsApp: chat, conversazione, ricerca per intervallo data/ora, galleria, chiamate, export.
 
-use super::{badge, bubble, export_file, fmt_date, fmt_size, header, paint_thumb, paint_thumb_opt, save_dialog, short, tz_offset_min, viewer, Env};
+use super::{badge, bubble, export_file, fmt_date, fmt_size, header, paint_thumb_opt, save_dialog, short, tz_offset_min, viewer, Env};
 use crate::images::{self, Img, Src};
 use crate::player::{fmt_time, Player};
 use crate::tasks::{self, Task};
@@ -665,11 +665,13 @@ impl State {
                     if has_media {
                         let md = md.unwrap();
                         let (rect, resp) = ui.allocate_exact_size(Vec2::new(220.0, 220.0), Sense::click());
-                        match (&md.thumb, &md.id) {
-                            (Some(th), Some(id)) => paint_thumb_opt(ui, env, rect, th, "t.jpg", Some(id), Some(&md.name)),
-                            (Some(th), None) => paint_thumb(ui, env, rect, th, "t.jpg"),
-                            (None, Some(id)) => paint_thumb(ui, env, rect, id, &md.name),
-                            _ => {}
+                        let (prim_id, prim_name, fb_id, fb_name) = if vid {
+                            (md.thumb.as_deref().or(md.id.as_deref()), "t.jpg", md.id.as_deref(), md.name.as_str())
+                        } else {
+                            (md.id.as_deref().or(md.thumb.as_deref()), md.name.as_str(), md.thumb.as_deref(), "t.jpg")
+                        };
+                        if let Some(pid) = prim_id {
+                            paint_thumb_opt(ui, env, rect, pid, prim_name, fb_id, Some(fb_name));
                         }
                         if vid {
                             badge(ui, rect, &format!("▶ {}", fmt_time(md.duration)), true);
@@ -799,11 +801,13 @@ impl State {
             ui.horizontal_wrapped(|ui| {
                 for (k, it) in vis.iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(110.0), Sense::click());
-                    match (&it.thumb, &it.id) {
-                        (Some(th), Some(id)) => paint_thumb_opt(ui, env, rect, th, "t.jpg", Some(id), Some(&it.name)),
-                        (Some(th), None) => paint_thumb(ui, env, rect, th, "t.jpg"),
-                        (None, Some(id)) => paint_thumb(ui, env, rect, id, &it.name),
-                        _ => {}
+                    let (prim_id, prim_name, fb_id, fb_name) = if it.video {
+                        (it.thumb.as_deref().or(it.id.as_deref()), "t.jpg", it.id.as_deref(), it.name.as_str())
+                    } else {
+                        (it.id.as_deref().or(it.thumb.as_deref()), it.name.as_str(), it.thumb.as_deref(), "t.jpg")
+                    };
+                    if let Some(pid) = prim_id {
+                        paint_thumb_opt(ui, env, rect, pid, prim_name, fb_id, Some(fb_name));
                     }
                     if it.video {
                         badge(ui, rect, "▶", true);

@@ -9,7 +9,7 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
-const CAP: usize = 700;
+const CAP: usize = 1500;
 const WORKERS: usize = 4;
 
 /// Origine di un'immagine.
@@ -109,14 +109,14 @@ fn worker(inner: &Inner) {
                 q = inner.cv.wait(q).unwrap();
             }
         };
-        // Salta solo se la coda è congestionata (> 20 elementi) E la richiesta è veramente vecchia (> 180 frame, ~3 secondi).
-        // Non scarta MAI le immagini richieste per il visualizzatore a tutto schermo o ad alta risoluzione (max == 0 o max == 512).
-        let now = inner.frame.load(Ordering::Relaxed);
-        let q_len = inner.queue.lock().unwrap().len();
-        if job.max != 0 && job.max != 512 && q_len > 20 {
-            let mut slots = inner.slots.lock().unwrap();
-            if slots.get(&job.key).is_some_and(|s| now.saturating_sub(s.used) > 180) {
-                slots.remove(&job.key);
+        // Se l'elemento è già pronto in cache, non ricalcolare
+        {
+            let slots = inner.slots.lock().unwrap();
+            if let Some(s) = slots.get(&job.key) {
+                if matches!(s.state, State::Ready(_)) {
+                    continue;
+                }
+            } else {
                 continue;
             }
         }
@@ -172,7 +172,11 @@ pub fn load_dynamic_image(src: &Src) -> Result<image::DynamicImage, String> {
                     }
                 }
             }
-            // Fallback via ffmpeg (video primo frame, HEIC complesso o formato non standard)
+            // Fallback via ffmpeg solo se il file esiste nel backup (video o formati speciali come HEIC)
+            let exists = backup.with(|cx| cx.content(id).map(|_| ())).is_ok();
+            if !exists {
+                return Err("file non presente nel backup".into());
+            }
             let b = media::register(backup);
             let jpg = media::jpeg(&media::url(b, id), name, None).map_err(|e| e.to_string())?;
             parse_image_bytes(&jpg).ok_or_else(|| "decodifica immagine fallita anche con ffmpeg".into())
@@ -211,5 +215,15 @@ mod tests {
         let res = decode(&src, 192);
         assert!(res.is_ok());
     }
+
+    #[test]
+    fn test_real_thumb() {
+        let path = "F:\\DumpIOSPing1\\Backup\\00008110-000A648136D0A01E\\5f\\5f91d4093f9e2c8861761f78e0455fc742b478c3";
+        if let Ok(bytes) = std::fs::read(path) {
+            let res = parse_image_bytes(&bytes);
+            assert!(res.is_some(), "Thumb should decode!");
+        }
+    }
 }
+
 

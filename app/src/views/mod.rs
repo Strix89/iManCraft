@@ -240,6 +240,24 @@ pub fn paint_thumb_opt(ui: &egui::Ui, env: &Env, rect: egui::Rect, id: &str, nam
             painter.image(t.id(), rect, uv, egui::Color32::WHITE);
         }
         Img::Loading => {
+            if let (Some(fid), Some(fname)) = (fb_id, fb_name) {
+                if fid != id {
+                    let fallback = env.images.get(&images::key(env.backup, fid, max), max, || Src::File { backup: env.backup.clone(), id: fid.into(), name: fname.into() });
+                    if let Img::Ready(t) = fallback {
+                        let s = t.size_vec2();
+                        let (ar, rr) = (s.x / s.y, rect.width() / rect.height());
+                        let uv = if ar > rr {
+                            let w = rr / ar;
+                            egui::Rect::from_min_max(egui::pos2((1.0 - w) / 2.0, 0.0), egui::pos2((1.0 + w) / 2.0, 1.0))
+                        } else {
+                            let h = ar / rr;
+                            egui::Rect::from_min_max(egui::pos2(0.0, (1.0 - h) / 2.0), egui::pos2(1.0, (1.0 + h) / 2.0))
+                        };
+                        painter.image(t.id(), rect, uv, egui::Color32::WHITE);
+                        return;
+                    }
+                }
+            }
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, "…", egui::FontId::proportional(14.0), env.p.muted);
         }
         Img::Failed(_) => {
@@ -293,50 +311,47 @@ pub fn short(s: &str, n: usize) -> String {
     if s.chars().count() <= n { s.to_string() } else { format!("{}…", s.chars().take(n).collect::<String>()) }
 }
 
-pub fn bubble(ui: &mut egui::Ui, p: &Palette, me: bool, id: impl std::hash::Hash + std::fmt::Debug, add: impl FnOnce(&mut egui::Ui)) -> egui::Response {
+pub fn bubble(ui: &mut egui::Ui, p: &Palette, me: bool, _id: impl std::hash::Hash + std::fmt::Debug, add: impl FnOnce(&mut egui::Ui)) -> egui::Response {
     let right_pad = 10.0;
     let avail_w = ui.available_width();
     let max_w = ((avail_w - right_pad) * 0.72).clamp(160.0, (avail_w - right_pad - 10.0).max(160.0));
-    let key = ui.make_persistent_id(("bubble", id));
-    let prev: Option<f32> = ui.data_mut(|d| d.get_persisted(key));
-    let bubble_w = prev.unwrap_or(max_w).min(max_w);
-    let space = (avail_w - bubble_w - right_pad).max(0.0);
+    let margin_x = 20.0;
+    let content_max_w = (max_w - margin_x).max(40.0);
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        if me {
-            ui.add_space(space);
-        }
-        let max_frame_w = if me {
-            (avail_w - space - right_pad).max(60.0).min(max_w)
-        } else {
-            max_w
-        };
-        let margin_x = 20.0;
-        let content_max_w = (max_frame_w - margin_x).max(40.0);
-        let r = Frame::new()
-            .fill(if me { p.accent } else { p.bubble })
-            .corner_radius(CornerRadius::same(10))
-            .inner_margin(Margin::symmetric(10, 6))
-            .show(ui, |ui| {
-                ui.set_max_width(content_max_w);
-                if me {
-                    ui.visuals_mut().override_text_color = Some(p.on_accent);
-                    ui.visuals_mut().hyperlink_color = p.on_accent;
-                }
-                ui.vertical(add);
-            })
-            .response;
-        if me {
+    if me {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(right_pad);
-        }
-        if me && prev.is_none_or(|w| (w - r.rect.width()).abs() > 0.5) {
-            ui.data_mut(|d| d.insert_persisted(key, r.rect.width()));
-            ui.ctx().request_repaint();
-        }
-        r
-    })
-    .inner
+            Frame::new()
+                .fill(p.accent)
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.set_max_width(content_max_w);
+                        ui.visuals_mut().override_text_color = Some(p.on_accent);
+                        ui.visuals_mut().hyperlink_color = p.on_accent;
+                        add(ui);
+                    });
+                })
+                .response
+        })
+        .inner
+    } else {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            Frame::new()
+                .fill(p.bubble)
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.set_max_width(content_max_w);
+                    ui.vertical(add);
+                })
+                .response
+        })
+        .inner
+    }
 }
 
 /// Pannello laterale sinistro con margine verso il contenuto.
@@ -362,7 +377,7 @@ mod tests {
         let ctx = egui::Context::default();
         let p = Palette::new(true, [255, 120, 0]);
 
-        for frame in 1..=4 {
+        for _frame in 1..=4 {
             let mut out = ctx.run_ui(Default::default(), |ui| {
                 ui.set_width(1280.0);
                 egui::Panel::left("rail").exact_size(86.0).show(ui, |_ui| {});
@@ -378,20 +393,16 @@ mod tests {
                             ui.label("Ok grazie!");
                         });
                         assert!(short_resp.rect.max.x <= right_bound, "Short bubble exceeded available area: {} > {}", short_resp.rect.max.x, right_bound);
-                        if frame >= 2 {
-                            let dist_from_right = right_bound - short_resp.rect.max.x;
-                            assert!((dist_from_right - 10.0).abs() < 1.5, "Short bubble not aligned to right: dist={dist_from_right}, expected ~10.0");
-                        }
+                        let dist_from_right = right_bound - short_resp.rect.max.x;
+                        assert!((dist_from_right - 10.0).abs() < 1.5, "Short bubble not aligned to right: dist={dist_from_right}, expected ~10.0");
 
                         // Messaggio lungo inviato con wrapping
                         let long_resp = bubble(ui, &p, true, "long_1", |ui| {
                             ui.add(egui::Label::new("Questo è un messaggio inviato molto lungo che contiene molte parole per verificare come egui calcola la larghezza e se per caso va a finire oltre il bordo destro dello schermo quando non c'è wrap esplicito!").selectable(true).wrap());
                         });
                         assert!(long_resp.rect.max.x <= right_bound, "Long bubble exceeded available area: {} > {}", long_resp.rect.max.x, right_bound);
-                        if frame >= 2 {
-                            let dist_from_right = right_bound - long_resp.rect.max.x;
-                            assert!((dist_from_right - 10.0).abs() < 1.5, "Long bubble not aligned to right: dist={dist_from_right}, expected ~10.0");
-                        }
+                        let dist_from_right = right_bound - long_resp.rect.max.x;
+                        assert!((dist_from_right - 10.0).abs() < 1.5, "Long bubble not aligned to right: dist={dist_from_right}, expected ~10.0");
 
                         // Messaggio ricevuto (a sinistra)
                         let recv_resp = bubble(ui, &p, false, "recv_1", |ui| {
