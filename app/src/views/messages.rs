@@ -90,7 +90,18 @@ impl State {
             for (i, m) in msgs.iter().enumerate() {
                 let d = fmt_date(m.t).get(..10).unwrap_or("").to_string();
                 if d != day {
-                    ui.vertical_centered(|ui| ui.weak(RichText::new(if d.is_empty() { "data sconosciuta" } else { &d }).small()));
+                    ui.add_space(8.0);
+                    ui.vertical_centered(|ui| {
+                        let text = if d.is_empty() { "data sconosciuta" } else { &d };
+                        let font_id = egui::FontId::proportional(11.0);
+                        let galley = ui.painter().layout_no_wrap(text.to_string(), font_id, p.muted);
+                        let pad = egui::vec2(18.0, 6.0);
+                        let size = galley.size() + pad;
+                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 8.0, p.panel_alt);
+                        ui.painter().galley(rect.min + egui::vec2(9.0, 3.0), galley, p.muted);
+                    });
+                    ui.add_space(4.0);
                     day = d;
                 }
                 ui.add_space(2.0);

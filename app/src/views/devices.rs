@@ -26,30 +26,33 @@ pub fn ui(ui: &mut egui::Ui, p: &Palette, backups: &[Arc<Backup>], current: Opti
         ui.weak("Nessun backup trovato nelle cartelle standard. Usa File → Aggiungi cartella di backup…");
     }
     egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP).with_main_wrap(true), |ui| {
             for (i, b) in backups.iter().enumerate() {
                 let sel = current == Some(i);
                 let r = theme::card(p)
                     .stroke(Stroke::new(if sel { 1.5 } else { 1.0 }, if sel { p.accent } else { p.line }))
                     .show(ui, |ui| {
-                        ui.set_width(250.0);
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("📱").size(30.0));
-                            ui.vertical(|ui| {
-                                ui.label(RichText::new(&b.summary.name).strong());
-                                ui.weak(format!("{} · iOS {}", b.summary.model, b.summary.ios));
-                                ui.weak(format!("{}{}", b.summary.date.get(..10).unwrap_or(&b.summary.date), if b.summary.size > 0 { format!(" · {}", fmt_size(b.summary.size)) } else { String::new() }));
+                        ui.set_width(260.0);
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("📱").size(30.0));
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(&b.summary.name).strong());
+                                    ui.weak(format!("{} · iOS {}", b.summary.model, b.summary.ios));
+                                    ui.weak(format!("{}{}", b.summary.date.get(..10).unwrap_or(&b.summary.date), if b.summary.size > 0 { format!(" · {}", fmt_size(b.summary.size)) } else { String::new() }));
+                                });
                             });
-                        });
-                        ui.horizontal(|ui| {
-                            if b.encrypted {
-                                theme::chip(ui, if b.is_locked() { "cifrato" } else { "sbloccato" }, if b.is_locked() { p.danger } else { p.success });
-                            } else {
-                                theme::chip(ui, "non cifrato", p.muted);
-                            }
-                            if b.dir.join("DDNABackup.plist").exists() {
-                                theme::chip(ui, "imazing", p.accent);
-                            }
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if b.encrypted {
+                                    theme::chip(ui, if b.is_locked() { "cifrato" } else { "sbloccato" }, if b.is_locked() { p.danger } else { p.success });
+                                } else {
+                                    theme::chip(ui, "non cifrato", p.muted);
+                                }
+                                if b.dir.join("DDNABackup.plist").exists() {
+                                    theme::chip(ui, "imazing", p.accent);
+                                }
+                            });
                         });
                     })
                     .response

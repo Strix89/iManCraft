@@ -18,6 +18,7 @@ impl State {
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             // 1. Hero Card del Dispositivo
             theme::card(p).show(ui, |ui| {
+                ui.set_width(ui.available_width() - 8.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(if b.summary.model.to_lowercase().contains("ipad") { "📟" } else { "📱" }).size(44.0));
                     ui.add_space(8.0);
@@ -82,7 +83,8 @@ impl State {
 
                 // Barra segmentata
                 let bar_height = 14.0;
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(760.0), bar_height), Sense::hover());
+                let bar_w = ui.available_width() - 8.0;
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(bar_w, bar_height), Sense::hover());
                 let painter = ui.painter_at(rect);
                 painter.rect_filled(rect, 4.0, p.panel_alt);
 
@@ -144,39 +146,48 @@ impl State {
                 ("🛡", "Rilevamento Spyware", "Scansione offline indicatori Pegasus e Predator", Section::Spyware),
             ];
 
-            let card_w = 230.0;
+            let avail_w = ui.available_width() - 8.0;
+            let cols = if avail_w >= 840.0 { 4 } else if avail_w >= 440.0 { 2 } else { 1 };
+            let spacing = 10.0;
+            let card_w = ((avail_w - (cols as f32 - 1.0) * spacing) / cols as f32).max(180.0);
             let card_h = 76.0;
 
-            ui.horizontal_wrapped(|ui| {
-                for (icon, title, desc, target_sec) in actions {
-                    let r = Frame::new()
-                        .fill(p.panel)
-                        .corner_radius(CornerRadius::same(6))
-                        .stroke(Stroke::new(1.0, p.line))
-                        .inner_margin(Margin::symmetric(12, 10))
-                        .show(ui, |ui| {
-                            ui.set_width(card_w);
-                            ui.set_height(card_h);
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(icon).size(26.0));
-                                ui.add_space(6.0);
-                                ui.vertical(|ui| {
-                                    ui.label(RichText::new(title).strong().size(13.5));
-                                    ui.weak(RichText::new(desc).size(11.0));
+            egui::Grid::new("discover_actions_grid")
+                .num_columns(cols)
+                .spacing([spacing, spacing])
+                .show(ui, |ui| {
+                    for (idx, (icon, title, desc, target_sec)) in actions.iter().enumerate() {
+                        let r = Frame::new()
+                            .fill(p.panel)
+                            .corner_radius(CornerRadius::same(6))
+                            .stroke(Stroke::new(1.0, p.line))
+                            .inner_margin(Margin::symmetric(12, 10))
+                            .show(ui, |ui| {
+                                ui.set_width(card_w);
+                                ui.set_height(card_h);
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(*icon).size(26.0));
+                                    ui.add_space(6.0);
+                                    ui.vertical(|ui| {
+                                        ui.label(RichText::new(*title).strong().size(13.5));
+                                        ui.weak(RichText::new(*desc).size(11.0));
+                                    });
                                 });
-                            });
-                        })
-                        .response
-                        .interact(Sense::click());
+                            })
+                            .response
+                            .interact(Sense::click());
 
-                    if r.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        if r.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if r.clicked() {
+                            *env.nav = Some(Nav::Section(*target_sec));
+                        }
+                        if (idx + 1) % cols == 0 {
+                            ui.end_row();
+                        }
                     }
-                    if r.clicked() {
-                        *env.nav = Some(Nav::Section(target_sec));
-                    }
-                }
-            });
+                });
 
             ui.add_space(14.0);
 
@@ -184,6 +195,7 @@ impl State {
             theme::section_label(ui, p, "Informazioni dispositivo");
             ui.add_space(4.0);
             theme::card(p).show(ui, |ui| {
+                ui.set_width(ui.available_width() - 8.0);
                 egui::Grid::new("discover_device_details")
                     .num_columns(2)
                     .spacing([20.0, 6.0])

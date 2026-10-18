@@ -267,12 +267,13 @@ pub fn short(s: &str, n: usize) -> String {
 /// Le bolle "mie" si allineano a destra usando la larghezza misurata al frame precedente (egui non conosce la
 /// larghezza del contenuto prima di disegnarlo; un layout allineato a destra la allargherebbe a tutta riga).
 pub fn bubble(ui: &mut egui::Ui, p: &Palette, me: bool, id: impl std::hash::Hash + std::fmt::Debug, add: impl FnOnce(&mut egui::Ui)) -> egui::Response {
-    let max_w = (ui.available_width() * 0.72).max(220.0);
+    let right_pad = 10.0;
+    let max_w = ((ui.available_width() - right_pad) * 0.72).max(220.0);
     let key = ui.make_persistent_id(("bubble", id));
     let prev: Option<f32> = ui.data(|d| d.get_temp(key));
     ui.horizontal(|ui| {
         if me {
-            ui.add_space((ui.available_width() - prev.unwrap_or(max_w)).max(0.0));
+            ui.add_space((ui.available_width() - prev.unwrap_or(max_w) - right_pad).max(0.0));
         }
         let r = Frame::new()
             .fill(if me { p.accent } else { p.bubble })
@@ -287,6 +288,9 @@ pub fn bubble(ui: &mut egui::Ui, p: &Palette, me: bool, id: impl std::hash::Hash
                 ui.vertical(add);
             })
             .response;
+        if me {
+            ui.add_space(right_pad);
+        }
         if me && prev.is_none_or(|w| (w - r.rect.width()).abs() > 0.5) {
             ui.data_mut(|d| d.insert_temp(key, r.rect.width()));
             ui.ctx().request_repaint();

@@ -47,34 +47,34 @@ impl State {
         let mut export_req = None;
 
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP).with_main_wrap(true), |ui| {
                 for a in apps.iter().filter(|a| f.is_empty() || format!("{} {} {}", a.name, a.bundle, a.artist).to_lowercase().contains(&f)) {
                     let mut open_files = false;
                     theme::card(env.p).show(ui, |ui| {
                         ui.set_width(260.0);
-                        ui.horizontal(|ui| {
-                            let (rect, icon_resp) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::click());
-                            match (&a.icon, a.icon.as_ref().map(|b| env.images.get(&format!("icon:{}", a.bundle), 96, || Src::Bytes(Arc::from(b.as_slice()))))) {
-                                (_, Some(Img::Ready(t))) => {
-                                    ui.painter().image(t.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                let (rect, icon_resp) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::click());
+                                match (&a.icon, a.icon.as_ref().map(|b| env.images.get(&format!("icon:{}", a.bundle), 96, || Src::Bytes(Arc::from(b.as_slice()))))) {
+                                    (_, Some(Img::Ready(t))) => {
+                                        ui.painter().image(t.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                                    }
+                                    _ => {
+                                        ui.painter().rect_filled(rect, 10.0, env.p.line);
+                                    }
                                 }
-                                _ => {
-                                    ui.painter().rect_filled(rect, 10.0, env.p.line);
-                                }
-                            }
-                            if icon_resp.clicked() {
-                                open_files = true;
-                            }
-                            ui.vertical(|ui| {
-                                if ui.link(RichText::new(super::short(&a.name, 26)).strong()).clicked() {
+                                if icon_resp.clicked() {
                                     open_files = true;
                                 }
-                                ui.weak(super::short(if a.artist.is_empty() { &a.bundle } else { &a.artist }, 30));
-                                ui.weak(format!("{}{} file", if a.version.is_empty() { String::new() } else { format!("v{} · ", a.version) }, a.files));
+                                ui.vertical(|ui| {
+                                    if ui.link(RichText::new(super::short(&a.name, 26)).strong()).clicked() {
+                                        open_files = true;
+                                    }
+                                    ui.weak(super::short(if a.artist.is_empty() { &a.bundle } else { &a.artist }, 30));
+                                    ui.weak(format!("{}{} file", if a.version.is_empty() { String::new() } else { format!("v{} · ", a.version) }, a.files));
+                                });
                             });
-                        });
-                        ui.add_space(2.0);
-                        ui.horizontal(|ui| {
+                            ui.add_space(4.0);
                             if ui.button("📦 Esporta .imazingapp").on_hover_text("Esporta i dati sandbox in formato container iMazing").clicked() {
                                 let safe_name: String = a.name.chars().map(|c| if c.is_alphanumeric() || c == ' ' { c } else { '_' }).collect();
                                 if let Some(dest) = super::save_dialog(&format!("{}.imazingapp", safe_name.trim())) {
