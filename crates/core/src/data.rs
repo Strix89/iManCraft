@@ -272,15 +272,17 @@ pub fn chat(cx: &Ctx, chat_id: i64) -> Res<Vec<Message>> {
 
 #[derive(Clone, Debug)]
 pub struct Note {
+    pub id: i64,
     pub title: String,
     pub folder: String,
     pub modified: f64,
     pub locked: bool,
+    pub hint: Option<String>,
     pub text: String,
 }
 
 /// ZICNOTEDATA.ZDATA = gzip(protobuf): Document.2 -> Note.3 -> note_text.2
-fn note_text(zdata: &[u8]) -> Option<String> {
+pub(crate) fn note_text(zdata: &[u8]) -> Option<String> {
     let mut d = vec![];
     flate2::read::GzDecoder::new(zdata).read_to_end(&mut d).ok()?;
     let t = pb_field(pb_field(pb_field(&d, 2)?, 3)?, 2)?;
@@ -289,9 +291,12 @@ fn note_text(zdata: &[u8]) -> Option<String> {
 
 pub fn notes(cx: &Ctx) -> Res<Vec<Note>> {
     let db = cx.sqlite("AppDomainGroup-group.com.apple.notes", "NoteStore.sqlite")?;
+    let (verifier, _) = crate::notes_recovery::load_notes_crypto_context(&db);
+    let default_hint = verifier.and_then(|v| v.hint);
+
     // ponytail: nomi colonna di iOS 13+ (ZTITLE1/ZMODIFICATIONDATE1/ZTITLE2); versioni più vecchie usano schemi diversi.
     let mut st = db.prepare(
-        "SELECT n.ZTITLE1, n.ZSNIPPET, n.ZMODIFICATIONDATE1, d.ZDATA, f.ZTITLE2, n.ZISPASSWORDPROTECTED
+        "SELECT n.ZTITLE1, n.ZSNIPPET, n.ZMODIFICATIONDATE1, d.ZDATA, f.ZTITLE2, n.ZISPASSWORDPROTECTED, n.Z_PK, n.ZPASSWORDHINT
          FROM ZICCLOUDSYNCINGOBJECT n JOIN ZICNOTEDATA d ON d.ZNOTE=n.Z_PK
          LEFT JOIN ZICCLOUDSYNCINGOBJECT f ON f.Z_PK=n.ZFOLDER
          WHERE coalesce(n.ZMARKEDFORDELETION,0)=0 ORDER BY n.ZMODIFICATIONDATE1 DESC",
@@ -300,17 +305,21 @@ pub fn notes(cx: &Ctx) -> Res<Vec<Note>> {
         .query_map([], |r| {
             let locked = num(r, 5) != 0.0;
             let body = if locked { None } else { r.get::<_, Option<Vec<u8>>>(3)?.and_then(|z| note_text(&z)) };
+            let row_hint: Option<String> = r.get(7).ok().flatten();
             Ok(Note {
+                id: r.get::<_, i64>(6).unwrap_or(0),
                 title: txt(r, 0),
                 folder: txt(r, 4),
                 modified: num(r, 2) + APPLE_EPOCH,
                 locked,
+                hint: row_hint.or_else(|| default_hint.clone()),
                 text: body.unwrap_or_else(|| txt(r, 1)).replace('\u{FFFC}', "[allegato]"),
             })
         })?
         .collect::<Result<_, _>>()?;
     Ok(out)
 }
+
 
 // ---------------------------------------------------------------- chiamate & Safari (solo backup cifrati)
 

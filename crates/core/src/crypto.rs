@@ -65,12 +65,10 @@ pub fn unlock(keybag: &[u8], password: &[u8]) -> Result<ClassKeys, String> {
     Ok(keys)
 }
 
-/// AES Key Unwrap (RFC 3394). None se l'IV di integrità non torna (= chiave/password sbagliata).
-pub fn aes_unwrap(kek: &[u8], wrapped: &[u8]) -> Option<Vec<u8>> {
+fn aes_unwrap_cipher<C: BlockDecrypt>(cipher: C, wrapped: &[u8]) -> Option<Vec<u8>> {
     if wrapped.len() < 24 || wrapped.len() % 8 != 0 {
         return None;
     }
-    let aes = Aes256::new_from_slice(kek).ok()?;
     let n = wrapped.len() / 8 - 1;
     let mut a = u64::from_be_bytes(wrapped[..8].try_into().unwrap());
     let mut r: Vec<[u8; 8]> = wrapped[8..].chunks(8).map(|c| c.try_into().unwrap()).collect();
@@ -79,13 +77,24 @@ pub fn aes_unwrap(kek: &[u8], wrapped: &[u8]) -> Option<Vec<u8>> {
             let mut b = [0u8; 16];
             b[..8].copy_from_slice(&(a ^ (n * j + i) as u64).to_be_bytes());
             b[8..].copy_from_slice(&r[i - 1]);
-            aes.decrypt_block(GenericArray::from_mut_slice(&mut b));
+            cipher.decrypt_block(GenericArray::from_mut_slice(&mut b));
             a = u64::from_be_bytes(b[..8].try_into().unwrap());
             r[i - 1] = b[8..].try_into().unwrap();
         }
     }
     (a == 0xA6A6_A6A6_A6A6_A6A6).then(|| r.concat())
 }
+
+/// AES Key Unwrap (RFC 3394). Supporta KEK a 128 bit (Apple Notes) e 256 bit (Backup KeyBag).
+/// Ritorna None se l'IV di integrità non torna (= chiave/password errata).
+pub fn aes_unwrap(kek: &[u8], wrapped: &[u8]) -> Option<Vec<u8>> {
+    match kek.len() {
+        16 => aes_unwrap_cipher(aes::Aes128::new_from_slice(kek).ok()?, wrapped),
+        32 => aes_unwrap_cipher(aes::Aes256::new_from_slice(kek).ok()?, wrapped),
+        _ => None,
+    }
+}
+
 
 /// Chiave di un file: `wrapped` è avvolta con la chiave della classe di protezione.
 pub fn file_key(keys: &ClassKeys, class: u32, wrapped: &[u8]) -> Option<[u8; 32]> {
@@ -208,6 +217,12 @@ pub mod tests {
 
     #[test]
     fn rfc3394_vector() {
+        // RFC 3394 §4.1: KEK 128 bit, dati 128 bit
+        let kek128 = hex("000102030405060708090A0B0C0D0E0F");
+        let data128 = hex("00112233445566778899AABBCCDDEEFF");
+        let wrapped128 = hex("1FA68B0A8112B447AEF34BD8FB5A7B829D3E862371D2CFE5");
+        assert_eq!(aes_unwrap(&kek128, &wrapped128), Some(data128));
+
         // RFC 3394 §4.6: KEK 256 bit, dati 256 bit
         let kek = hex("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
         let data = hex("00112233445566778899AABBCCDDEEFF000102030405060708090A0B0C0D0E0F");
@@ -217,6 +232,19 @@ pub mod tests {
         let mut bad = wrapped.clone();
         bad[10] ^= 1;
         assert_eq!(aes_unwrap(&kek, &bad), None);
+
+        // Apple Secure Notes / Hashcat mode 16200 test vector
+        let salt = hex("80771171105233481004850004085037");
+        let wrapped_key = hex("d04b17af7f6b184346aad3efefe8bec0987ee73418291a41");
+        let mut kek = [0u8; 16];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(b"hashcat", &salt, 20000, &mut kek);
+        let unwrapped = aes_unwrap(&kek, &wrapped_key);
+        assert!(unwrapped.is_some(), "Apple Secure Notes vector unwrap failed!");
+
+        // Password sbagliata:
+        let mut bad_kek = [0u8; 16];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(b"wrong_password", &salt, 20000, &mut bad_kek);
+        assert_eq!(aes_unwrap(&bad_kek, &wrapped_key), None);
     }
 
     #[test]
@@ -232,4 +260,27 @@ pub mod tests {
         }
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn test_backup_notes_verifier() {
+        let salt = hex("3634f4ac2c25789d50f4591656a8bd25");
+        let verifier = hex("b810b5d57a6fae0e6fcbeefc2cf07da50c137515ca135ff1");
+        let candidates = [
+            "nulla è reale, tutto è lecito",
+            "Nulla è reale, tutto è lecito",
+            "nulla e reale, tutto e lecito",
+            "Nulla e reale, tutto e lecito",
+            "nulla è reale tutto è lecito",
+            "Nulla è reale tutto è lecito",
+            "nulla", "reale", "lecito", "assassin", "assassins", "creed", "altair", "ezio",
+        ];
+        for cand in candidates {
+            let mut kek = [0u8; 16];
+            pbkdf2::pbkdf2_hmac::<sha2::Sha256>(cand.as_bytes(), &salt, 20000, &mut kek);
+            if let Some(unwrapped) = aes_unwrap(&kek, &verifier) {
+                println!("FOUND PASSWORD: '{}' -> unwrapped key: {:02x?}", cand, unwrapped);
+            }
+        }
+    }
 }
+

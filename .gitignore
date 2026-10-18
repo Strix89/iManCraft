@@ -22,6 +22,7 @@
 *.tmp
 scratch_*.py
 scratch_*.rs
+scratch/
 
 # File di sistema e IDE
 Thumbs.db

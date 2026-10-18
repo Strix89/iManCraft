@@ -18,6 +18,8 @@ pub mod spyware;
 pub mod telegram;
 pub mod voicemail;
 pub mod whatsapp;
+pub mod notes_recovery;
+
 
 
 use crypto::{CbcReader, ClassKeys};
@@ -132,6 +134,15 @@ impl Backup {
     pub fn ddna(&self) -> Option<&datasets::DdnaMeta> {
         self.summary.ddna.as_ref()
     }
+
+    /// Carica il contesto crittografico delle Note protette (verifier account e note cifrate).
+    pub fn notes_crypto_context(&self) -> Res<(Option<notes_recovery::AccountCryptoVerifier>, Vec<notes_recovery::ProtectedNoteData>)> {
+        self.with(|cx| {
+            let db = cx.sqlite("AppDomainGroup-group.com.apple.notes", "NoteStore.sqlite")?;
+            Ok(notes_recovery::load_notes_crypto_context(&db))
+        })
+    }
+
 
     /// Sezioni chiave/valore di Info.plist, DDNABackup.plist (iMazing), Manifest.plist, Status.plist.
     pub fn info(&self) -> Vec<(String, Vec<(String, String)>)> {

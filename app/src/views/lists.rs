@@ -18,7 +18,13 @@ use imancraft_core::search::{self, SearchResult};
 use imancraft_core::spyware::{self, SpywareFinding};
 use imancraft_core::telegram::{self, TelegramStatus, TgChat, TgMessage};
 use imancraft_core::voicemail::{self, VoicemailItem};
+use std::collections::HashMap;
 use std::fs;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc::{channel, Receiver},
+    Arc,
+};
 
 #[derive(Default)]
 pub struct State {
@@ -36,6 +42,15 @@ pub struct State {
     export_action: Option<Task<()>>,
     filter: String,
     note_sel: Option<usize>,
+    note_pwd_input: String,
+    note_unlock_status: Option<Result<String, String>>,
+    note_unlocked_texts: HashMap<i64, String>,
+    note_cracking: bool,
+    #[allow(dead_code)]
+    note_crack_rx: Option<Receiver<imancraft_core::notes_recovery::CrackProgress>>,
+    note_crack_cancel: Option<Arc<AtomicBool>>,
+    note_crack_status: Option<(usize, usize, f32)>,
+    note_found_pwd: Option<String>,
     safari_tab: usize, // 0 = Cronologia, 1 = Preferiti
     voicemail_tab: usize, // 0 = Segreteria, 1 = Memo vocali
     reminder_filter: usize, // 0 = Tutti, 1 = Da fare, 2 = Completati
@@ -45,6 +60,7 @@ pub struct State {
     telegram_chat_sel: Option<i64>,
     telegram_msgs: Option<Task<Vec<TgMessage>>>,
 }
+
 
 /// Intestazioni di tabella monospazio.
 pub fn head(cols: &[&str], mut h: egui_extras::TableRow) {
@@ -122,7 +138,131 @@ impl State {
             });
     }
 
+    fn start_note_crack(&mut self, backup: Arc<imancraft_core::Backup>, candidates: Vec<String>) {
+        if candidates.is_empty() {
+            self.note_unlock_status = Some(Err("Nessun candidato da verificare.".into()));
+            return;
+        }
+        let Ok((verifier, _)) = backup.notes_crypto_context() else {
+            self.note_unlock_status = Some(Err("Impossibile caricare i parametri di cifratura delle Note.".into()));
+            return;
+        };
+        let Some(v) = verifier else {
+            self.note_unlock_status = Some(Err("Nessun verificatore crittografico trovato nel database NoteStore.sqlite.".into()));
+            return;
+        };
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = channel();
+        self.note_cracking = true;
+        self.note_crack_rx = Some(rx);
+        self.note_crack_cancel = Some(cancel.clone());
+        self.note_crack_status = Some((0, candidates.len(), 0.0));
+        self.note_unlock_status = None;
+
+        let salt = v.salt;
+        let iters = v.iterations;
+        let verifier_data = v.verifier;
+
+        std::thread::spawn(move || {
+            imancraft_core::notes_recovery::run_crack_session(
+                salt,
+                iters,
+                verifier_data,
+                candidates,
+                cancel,
+                tx,
+            );
+        });
+    }
+
+    fn unlock_note_manual(&mut self, backup: &imancraft_core::Backup, note_id: i64, password: &str) {
+        let pwd = password.trim();
+        if pwd.is_empty() {
+            self.note_unlock_status = Some(Err("Inserisci una password valida.".into()));
+            return;
+        }
+
+        let Ok((verifier, protected_notes)) = backup.notes_crypto_context() else {
+            self.note_unlock_status = Some(Err("Impossibile accedere al database delle Note.".into()));
+            return;
+        };
+
+        let Some(target) = protected_notes.iter().find(|pn| pn.note_pk == note_id) else {
+            self.note_unlock_status = Some(Err(format!("Nota {note_id} non trovata tra i record protetti.")));
+            return;
+        };
+
+        match imancraft_core::notes_recovery::unlock_note(target, verifier.as_ref(), pwd) {
+            Ok(decrypted) => {
+                self.note_unlocked_texts.insert(note_id, decrypted);
+                self.note_found_pwd = Some(pwd.to_string());
+                let mut count = 1;
+                // Sblocca in cascata tutte le altre note protette
+                for pn in &protected_notes {
+                    if pn.note_pk != note_id {
+                        if let Ok(text) = imancraft_core::notes_recovery::unlock_note(pn, verifier.as_ref(), pwd) {
+                            self.note_unlocked_texts.insert(pn.note_pk, text);
+                            count += 1;
+                        }
+                    }
+                }
+                self.note_unlock_status = Some(Ok(format!("✓ Sbloccata con successo! {count} note decifrate con la password '{pwd}'.")));
+            }
+            Err(e) => {
+                self.note_unlock_status = Some(Err(format!("Password errata: {e}")));
+            }
+        }
+    }
+
     pub fn notes(&mut self, ui: &mut egui::Ui, env: &mut Env) {
+        // Polling messaggi di progresso dalla sessione di cracking asincrona
+        let mut crack_event = None;
+        if let Some(ref rx) = self.note_crack_rx {
+            while let Ok(msg) = rx.try_recv() {
+                crack_event = Some(msg);
+            }
+        }
+        if let Some(msg) = crack_event {
+            match msg {
+                imancraft_core::notes_recovery::CrackProgress::Running { tried, total, speed } => {
+                    self.note_crack_status = Some((tried, total, speed));
+                    ui.ctx().request_repaint();
+                }
+                imancraft_core::notes_recovery::CrackProgress::Found { password, tried } => {
+                    self.note_cracking = false;
+                    self.note_crack_rx = None;
+                    self.note_crack_cancel = None;
+                    self.note_found_pwd = Some(password.clone());
+                    self.note_unlock_status = Some(Ok(format!("✓ Password trovata con successo dopo {tried} tentativi: '{password}'!")));
+
+                    // Sblocca tutte le note protette caricate
+                    if let Ok((verifier, protected_notes)) = env.backup.notes_crypto_context() {
+                        for pn in &protected_notes {
+                            if let Ok(text) = imancraft_core::notes_recovery::unlock_note(pn, verifier.as_ref(), &password) {
+                                self.note_unlocked_texts.insert(pn.note_pk, text);
+                            }
+                        }
+                    }
+                    ui.ctx().request_repaint();
+                }
+                imancraft_core::notes_recovery::CrackProgress::DoneNotFound { total } => {
+                    self.note_cracking = false;
+                    self.note_crack_rx = None;
+                    self.note_crack_cancel = None;
+                    self.note_unlock_status = Some(Err(format!("Nessuna password trovata tra i {total} candidati testati. Prova con una wordlist personalizzata (.txt).")));
+                    ui.ctx().request_repaint();
+                }
+                imancraft_core::notes_recovery::CrackProgress::Cancelled => {
+                    self.note_cracking = false;
+                    self.note_crack_rx = None;
+                    self.note_crack_cancel = None;
+                    self.note_unlock_status = Some(Err("Sessione di recupero interrotta dall'utente.".into()));
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+
         if self.notes.is_none() {
             self.notes = Some(tasks::load(ui.ctx(), "Note", env.backup, data::notes));
         }
@@ -140,6 +280,7 @@ impl State {
             egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, 52.0, filtered.len(), |ui, range| {
                 for &(i, n) in &filtered[range] {
                     let is_sel = self.note_sel == Some(i);
+                    let is_unlocked = self.note_unlocked_texts.contains_key(&n.id);
                     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::click());
                     if is_sel {
                         ui.painter().rect_filled(rect, 4.0, p.accent.gamma_multiply(0.18));
@@ -148,14 +289,21 @@ impl State {
                         ui.painter().rect_filled(rect, 4.0, p.panel_alt);
                     }
                     let pt = ui.painter_at(rect);
-                    let title = format!("{}{}", if n.locked { "🔒 " } else { "" }, if n.title.is_empty() { "(senza titolo)" } else { &n.title });
+                    let lock_icon = if is_unlocked {
+                        "🔓 "
+                    } else if n.locked {
+                        "🔒 "
+                    } else {
+                        ""
+                    };
+                    let title = format!("{}{}", lock_icon, if n.title.is_empty() { "(senza titolo)" } else { &n.title });
                     let max_title_chars = ((rect.width() - 20.0) / 7.5).max(10.0) as usize;
                     pt.text(
                         egui::pos2(rect.min.x + 8.0, rect.min.y + 6.0),
                         egui::Align2::LEFT_TOP,
                         super::short(&title, max_title_chars),
                         egui::FontId::proportional(13.0),
-                        p.text,
+                        if is_unlocked { egui::Color32::from_rgb(120, 220, 140) } else { p.text },
                     );
                     pt.text(
                         egui::pos2(rect.min.x + 8.0, rect.min.y + 26.0),
@@ -167,38 +315,153 @@ impl State {
                     ui.add_space(2.0);
                     if resp.clicked() {
                         self.note_sel = Some(i);
+                        self.note_unlock_status = None;
                     }
                 }
             });
         });
-        let Some(n) = self.note_sel.and_then(|i| self.notes.as_ref()?.ready()?.as_ref().ok()?.get(i)) else {
-            ui.weak("Seleziona una nota.");
+
+        let Some(n) = self.note_sel.and_then(|i| self.notes.as_ref()?.ready()?.as_ref().ok()?.get(i).cloned()) else {
+            ui.weak("Seleziona una nota dall'elenco a sinistra.");
             return;
         };
+
+
+        let is_unlocked = self.note_unlocked_texts.contains_key(&n.id);
         crate::theme::title(ui, &n.title);
-        ui.weak(format!("{} · {}{}", n.folder, fmt_date(n.modified), if n.locked { " · nota protetta da password: solo anteprima" } else { "" }));
-        if n.locked {
-            ui.add_space(6.0);
+        ui.weak(format!("{} · {}{}", n.folder, fmt_date(n.modified), if n.locked && !is_unlocked { " · nota protetta da password" } else if is_unlocked { " · protetta [sbloccata]" } else { "" }));
+
+        if n.locked && !is_unlocked {
+            ui.add_space(8.0);
             egui::Frame::new()
                 .fill(p.panel_alt)
                 .stroke(egui::Stroke::new(1.0, p.accent))
                 .corner_radius(egui::CornerRadius::same(6))
-                .inner_margin(egui::Margin::same(10))
+                .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         crate::theme::chip(ui, "🔒 NOTA PROTETTA", egui::Color32::from_rgb(240, 160, 40));
-                        ui.label(RichText::new("Cifratura Apple iOS attiva").strong().color(p.text));
+                        ui.label(RichText::new("Cifratura Apple iOS (PBKDF2-SHA256 / AES-GCM)").strong().color(p.text));
                     });
+
+                    if let Some(ref h) = n.hint {
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("💡 Indizio Password:").strong().color(p.accent));
+                            ui.label(RichText::new(format!("«{h}»")).italics().color(p.text));
+                        });
+                    }
+
+                    ui.add_space(8.0);
+                    // Sblocco manuale diretto
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Password:").color(p.muted));
+                        let resp = ui.add(
+                            egui::TextEdit::singleline(&mut self.note_pwd_input)
+                                .password(true)
+                                .desired_width(220.0)
+                                .hint_text("Inserisci password…"),
+                        );
+                        let enter_hit = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if (ui.button(RichText::new("🔓 Sblocca").strong()).clicked() || enter_hit) && !self.note_pwd_input.is_empty() {
+                            let pwd = self.note_pwd_input.clone();
+                            self.unlock_note_manual(&env.backup, n.id, &pwd);
+                        }
+                    });
+
+                    ui.add_space(8.0);
+                    ui.separator();
                     ui.add_space(4.0);
-                    ui.label(RichText::new("Il contenuto completo di questa nota è protetto da cifratura crittografica (PBKDF2/AES). Lo snippet mostrato di seguito è l'anteprima non cifrata memorizzata localmente nel backup. Con il modulo di decrittazione/brute-force potrai recuperare il payload integrale.").small().color(p.muted));
+
+                    // Strumenti di recupero automatico / brute-force multi-core
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Recupero Password Multi-Core:").small().color(p.muted));
+                        if ui.button("⚡ Attacco da Indizio").on_hover_text("Genera e verifica permutazioni intelligenti basate sull'indizio (maiuscole, accenti, suffissi, parole singole) e password comuni").clicked() && !self.note_cracking {
+                            let hint = n.hint.as_deref().unwrap_or("");
+                            let mut cands = imancraft_core::notes_recovery::generate_hint_candidates(hint);
+                            cands.extend(imancraft_core::notes_recovery::common_passwords());
+                            self.start_note_crack(env.backup.clone(), cands);
+                        }
+
+                        if ui.button("🔢 Attacco PIN").on_hover_text("Verifica in parallelo tutti i 10.000 PIN a 4 cifre (0000-9999) e i PIN a 6 cifre più diffusi").clicked() && !self.note_cracking {
+                            let cands = imancraft_core::notes_recovery::generate_pin_candidates();
+                            self.start_note_crack(env.backup.clone(), cands);
+                        }
+
+                        if ui.button("📂 Wordlist (.txt)…").on_hover_text("Carica un file dizionario personalizzato (.txt, .dict, .lst) per eseguire il brute-force").clicked() && !self.note_cracking {
+                            if let Some(path) = rfd::FileDialog::new().add_filter("Wordlist", &["txt", "dict", "lst"]).pick_file() {
+                                if let Ok(content) = std::fs::read_to_string(&path) {
+                                    let cands: Vec<String> = content.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+                                    self.start_note_crack(env.backup.clone(), cands);
+                                }
+                            }
+                        }
+                    });
+
+                    // Progresso cracking in corso
+                    if self.note_cracking {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            if let Some((tried, total, speed)) = self.note_crack_status {
+                                let pct = (tried as f32 / total.max(1) as f32 * 100.0).min(100.0);
+                                ui.label(RichText::new(format!("Recupero in corso: {tried} / {total} ({pct:.1}%) · ~{speed:.0} pwd/sec")).color(p.accent));
+                            }
+                            if ui.button("⏹ Interrompi").clicked() {
+                                if let Some(ref c) = self.note_crack_cancel {
+                                    c.store(true, Ordering::Relaxed);
+                                }
+                            }
+                        });
+                        if let Some((tried, total, _)) = self.note_crack_status {
+                            ui.add(egui::ProgressBar::new(tried as f32 / total.max(1) as f32).animate(true));
+                        }
+                    }
+
+                    // Messaggio di stato
+                    if let Some(ref st) = self.note_unlock_status {
+                        ui.add_space(6.0);
+                        match st {
+                            Ok(msg) => {
+                                ui.label(RichText::new(msg).color(egui::Color32::from_rgb(100, 220, 120)));
+                            }
+                            Err(err) => {
+                                ui.label(RichText::new(format!("⚠ {err}")).color(egui::Color32::from_rgb(240, 120, 100)));
+                            }
+                        }
+                    }
                 });
-            ui.add_space(6.0);
+            ui.add_space(8.0);
+            ui.label(RichText::new("Anteprima non protetta recuperata dal backup:").small().color(p.muted));
+        } else if is_unlocked {
+            ui.add_space(8.0);
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(18, 42, 24))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 180, 80)))
+                .corner_radius(egui::CornerRadius::same(6))
+                .inner_margin(egui::Margin::same(10))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        crate::theme::chip(ui, "🔓 SBLOCCATA", egui::Color32::from_rgb(50, 180, 80));
+                        ui.label(RichText::new("Contenuto integrale decifrato con successo").strong().color(egui::Color32::WHITE));
+                        if let Some(ref pwd) = self.note_found_pwd {
+                            ui.weak(format!("(Password: '{}')", pwd));
+                        }
+                    });
+                });
+            ui.add_space(8.0);
         }
+
         ui.separator();
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            ui.add(egui::Label::new(&n.text).selectable(true));
+            if let Some(decrypted_text) = self.note_unlocked_texts.get(&n.id) {
+                ui.add(egui::Label::new(decrypted_text).selectable(true));
+            } else {
+                ui.add(egui::Label::new(&n.text).selectable(true));
+            }
         });
     }
+
 
     pub fn calls(&mut self, ui: &mut egui::Ui, env: &mut Env) {
         header(ui, env.p, "08", "Registro chiamate", "Chiamate");

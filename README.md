@@ -193,11 +193,12 @@ I seguenti obiettivi rappresentano le priorità di sviluppo per le prossime rele
     - Riconoscimento automatico dei percorsi di backup iOS su Linux (es. backup creati tramite `libimobiledevice` / `idevicebackup2`).
     - Distribuzione in formato universale e portatile **AppImage** e **Flatpak**.
 
-- [ ] **🔓 Brute-force & Password Recovery per Note Protette iOS**
+- [x] **🔓 Brute-force & Password Recovery per Note Protette iOS (Completato)**
   - Modulo integrato per il recupero credenziali e la decrittazione delle note bloccate (`NoteStore.sqlite`):
-    - Estrazione automatica dei parametri crittografici Apple (`ZCRYPTOSALT`, `ZCRYPTOWRAPPEDKEY`, `ZCRYPTOITERATIONCOUNT`).
-    - Motore di attacco a forza bruta (brute-force) e a dizionario (dictionary attack) ad alte prestazioni scritto in puro Rust multi-thread (via `rayon` su CPU e compute shaders su GPU Vulkan).
-    - Supporto per wordlist personalizzate (es. `rockyou.txt`) e regole di mutazione per sbloccare note personali protette.
+    - Estrazione automatica e resiliente dei parametri crittografici Apple (`ZCRYPTOSALT`, `ZCRYPTOWRAPPEDKEY`, `ZCRYPTOITERATIONCOUNT`).
+    - Motore di attacco da indizio password (hint-based), PIN a 4/6 cifre e wordlist personalizzate (`.txt`) scritto in puro Rust multi-thread via `rayon`.
+    - Derivazione PBKDF2-HMAC-SHA256 (20.000 iterazioni) e verifica immediata RFC 3394 con zero falsi positivi; decifratura del payload AES-GCM ed estrazione testo Protobuf.
+    - Sblocco a cascata nell'interfaccia ArtCraft: lo sblocco di una nota decifra automaticamente tutte le note dell'account.
 
 - [ ] **🐛 Bug Fixing & Rifinitura Continua**
   - Risoluzione delle anomalie residue nel rendering delle anteprime WhatsApp e percorsi alias offline iCloud.
