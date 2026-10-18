@@ -45,6 +45,9 @@ pub struct Viewer {
     upscaled: Option<(usize, egui::TextureHandle, u32, u32)>,
     show_upscaled: bool,
     upscaler_err: Option<String>,
+    show_ai_modal: bool,
+    selected_model: upscaler::RestorationModel,
+    force_cpu: bool,
 }
 
 impl Viewer {
@@ -60,6 +63,9 @@ impl Viewer {
             upscaled: None,
             show_upscaled: false,
             upscaler_err: None,
+            show_ai_modal: false,
+            selected_model: upscaler::RestorationModel::PhotoReal,
+            force_cpu: false,
         }
     }
 
@@ -102,6 +108,10 @@ impl Viewer {
 
         let (esc, left, right, space) = ctx.input(|i| (i.key_pressed(Key::Escape), i.key_pressed(Key::ArrowLeft), i.key_pressed(Key::ArrowRight), i.key_pressed(Key::Space)));
         if esc {
+            if self.show_ai_modal {
+                self.show_ai_modal = false;
+                return true;
+            }
             return false;
         }
         if left {
@@ -165,9 +175,11 @@ impl Viewer {
                                         (None, Some(th)) => Src::File { backup, id: th.clone(), name: "anteprima.jpg".into() },
                                         _ => Src::Bytes(Arc::new([])),
                                     };
+                                    let model = self.selected_model;
+                                    let force_cpu = self.force_cpu;
                                     self.export = Some(tasks::run(ui.ctx(), "Salvataggio immagine migliorata", move || {
                                         let img = images::load_dynamic_image(&src)?;
-                                        let up = upscaler::upscale_image(&img, &GPU, true)?;
+                                        let up = upscaler::upscale_configured(&img, model, &GPU, force_cpu)?;
                                         let mut f = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
                                         up.write_to(&mut f, image::ImageFormat::Jpeg).map_err(|e| e.to_string())
                                     }));
@@ -179,24 +191,19 @@ impl Viewer {
                             if ui.selectable_label(!self.show_upscaled, "Originale").clicked() {
                                 self.show_upscaled = false;
                             }
+                            if ui.add_enabled(!busy, egui::Button::new("⚙")).on_hover_text("Cambia modello di restauro AI").clicked() {
+                                self.show_ai_modal = true;
+                            }
                         } else if !it.video || it.id.is_none() {
-                            let label = if GPU.engine_path.is_some() {
-                                "✨ Migliora con AI (GPU 4×)"
+                            let label = if it.cloud || it.id.is_none() {
+                                "✨ Restaura Anteprima iCloud (AI 4×)…"
+                            } else if GPU.is_gpu_acceleration_available() {
+                                "✨ Migliora con AI (GPU 4×)…"
                             } else {
-                                "✨ Migliora Risoluzione (4× CAS)"
+                                "✨ Migliora Risoluzione (4×)…"
                             };
                             if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
-                                let backup = it.backup.clone();
-                                let src = match (&it.id, &it.thumb) {
-                                    (Some(id), _) => Src::File { backup, id: id.clone(), name: it.name.clone() },
-                                    (None, Some(th)) => Src::File { backup, id: th.clone(), name: "anteprima.jpg".into() },
-                                    _ => Src::Bytes(Arc::new([])),
-                                };
-                                self.upscaler_err = None;
-                                self.upscaling = Some(tasks::run(ui.ctx(), "Super-risoluzione AI GPU", move || {
-                                    let img = images::load_dynamic_image(&src)?;
-                                    upscaler::upscale_image(&img, &GPU, true)
-                                }));
+                                self.show_ai_modal = true;
                             }
                         }
 
@@ -314,6 +321,183 @@ impl Viewer {
                 });
             });
 
+            // Modal di configurazione e avvio restauro AI
+            if self.show_ai_modal {
+                let modal_w = 520.0;
+                let modal_h = 475.0;
+                let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
+
+                // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
+                ui.interact(screen, egui::Id::unique("ai-modal-bg"), egui::Sense::click());
+                ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(190));
+                ui.painter().rect_filled(modal_rect, 6.0, p.panel);
+                ui.painter().rect_stroke(modal_rect, 6.0, Stroke::new(1.5, p.accent), egui::StrokeKind::Outside);
+
+                ui.scope_builder(egui::UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
+                    ui.vertical(|ui| {
+                        theme::section_label(ui, p, "01 / RESTAURO & SUPER-RISOLUZIONE AI LOCALE");
+                        ui.add_space(4.0);
+                        let header_title = if it.cloud || it.id.is_none() {
+                            "✨ Restauro Anteprima iCloud (4×)"
+                        } else {
+                            "✨ Super-Risoluzione AI Locale (4×)"
+                        };
+                        ui.label(RichText::new(header_title).size(16.0).strong().color(p.text));
+                        ui.add_space(4.0);
+
+                        let subtitle = if it.cloud || it.id.is_none() {
+                            format!("L'originale è solo su iCloud: viene generata un'anteprima a quadrupla risoluzione per '{}'.", it.name)
+                        } else {
+                            format!("Incrementa la risoluzione di 4 volte ricostruendo dettagli e trame per '{}'.", it.name)
+                        };
+                        ui.label(RichText::new(subtitle).size(11.5).color(p.muted));
+                        ui.add_space(8.0);
+
+                        // Selezione Hardware & Avvisi CPU
+                        let gpu_avail = GPU.is_gpu_acceleration_available();
+
+                        ui.horizontal(|ui| {
+                            if gpu_avail {
+                                let gpu_label = format!("⚡ GPU ({})", if GPU.name.len() > 24 { &GPU.name[..24] } else { &GPU.name });
+                                if ui.selectable_label(!self.force_cpu, gpu_label).clicked() {
+                                    self.force_cpu = false;
+                                    if self.selected_model == upscaler::RestorationModel::FastCas {
+                                        self.selected_model = upscaler::RestorationModel::PhotoReal;
+                                    }
+                                }
+                                if ui.selectable_label(self.force_cpu, "🐌 Processore (CPU)").clicked() {
+                                    self.force_cpu = true;
+                                    if self.selected_model == upscaler::RestorationModel::PhotoReal {
+                                        self.selected_model = upscaler::RestorationModel::FastCas;
+                                    }
+                                }
+                            } else {
+                                theme::chip(ui, "HARDWARE: SOLO CPU", Color32::from_rgb(240, 160, 40));
+                                ui.label(RichText::new("Nessuna GPU compatibile rilevata").small().color(p.muted));
+                            }
+                        });
+                        ui.add_space(6.0);
+
+                        let is_cpu_mode = self.force_cpu || !gpu_avail;
+
+                        if !is_cpu_mode {
+                            // Box GPU Attiva
+                            egui::Frame::new()
+                                .fill(p.panel_alt)
+                                .stroke(Stroke::new(1.0, p.line))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .inner_margin(egui::Margin::same(10))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        theme::chip(ui, "GPU ACCELERATA", p.success);
+                                        ui.label(RichText::new("Accelerazione Hardware Attiva").strong().color(p.text));
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new("⚡ Vulkan 1.3 attivo: elaborazione neurale tensoriale locale (~1-3 secondi).").small().color(p.muted));
+                                });
+                        } else {
+                            // Box Avviso CPU (Requisito esplicito di sicurezza e prestazioni)
+                            egui::Frame::new()
+                                .fill(Color32::from_rgb(42, 28, 14))
+                                .stroke(Stroke::new(1.0, Color32::from_rgb(220, 140, 20)))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .inner_margin(egui::Margin::same(10))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        theme::chip(ui, "⚠ ATTENZIONE CPU", Color32::from_rgb(240, 160, 40));
+                                        ui.label(RichText::new("Esecuzione su Processore (CPU)").strong().color(Color32::from_rgb(255, 215, 130)));
+                                    });
+                                    ui.add_space(4.0);
+                                    let warn_msg = if gpu_avail && self.force_cpu {
+                                        "Hai selezionato manualmente la CPU. Il calcolo su processore richiede un uso intensivo di RAM e tempi sensibilmente più lunghi."
+                                    } else {
+                                        "Nessuna GPU accelerata rilevata (o driver Vulkan assenti). L'elaborazione su CPU richiede elevata RAM e tempi prolungati. Su computer con risorse limitate il processo può essere lento o interrompersi per memoria insufficiente."
+                                    };
+                                    ui.label(RichText::new(warn_msg).small().color(Color32::from_rgb(240, 220, 180)));
+                                    ui.add_space(3.0);
+                                    ui.label(RichText::new("💡 Consiglio: usa 'Algoritmo Rapido CAS' per un ingrandimento immediato e leggero su CPU.").small().italics().color(Color32::from_rgb(255, 235, 160)));
+                                });
+                        }
+
+                        ui.add_space(10.0);
+                        theme::section_label(ui, p, "02 / SELEZIONE MODELLO");
+                        ui.add_space(4.0);
+
+                        for model in [
+                            upscaler::RestorationModel::PhotoReal,
+                            upscaler::RestorationModel::PortraitFace,
+                            upscaler::RestorationModel::AnimeGraphics,
+                            upscaler::RestorationModel::FastCas,
+                        ] {
+                            let is_selected = self.selected_model == model;
+                            let title = model.title();
+                            let radio_text = if model == upscaler::RestorationModel::FastCas && is_cpu_mode {
+                                format!("⚡ {title} (Consigliato per CPU)")
+                            } else {
+                                title.to_string()
+                            };
+
+                            if ui.selectable_label(is_selected, radio_text).clicked() {
+                                self.selected_model = model;
+                            }
+                        }
+
+                        ui.add_space(4.0);
+                        egui::Frame::new()
+                            .fill(p.panel_alt)
+                            .corner_radius(egui::CornerRadius::same(3))
+                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new(self.selected_model.description()).small().color(p.muted));
+                            });
+
+                        ui.add_space(12.0);
+                        // Pulsanti azione
+                        ui.horizontal(|ui| {
+                            let action_label = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
+                                "⚠ Procedi comunque su CPU (Lento)"
+                            } else if is_cpu_mode {
+                                "⚡ Avvia Restauro Rapido CAS"
+                            } else {
+                                "⚡ Avvia Restauro con GPU (4×)"
+                            };
+
+                            let start_clicked = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
+                                ui.button(RichText::new(action_label).color(Color32::from_rgb(255, 200, 100))).clicked()
+                            } else {
+                                theme::primary(ui, p, action_label).clicked()
+                            };
+
+                            if start_clicked {
+                                self.show_ai_modal = false;
+                                let backup = it.backup.clone();
+                                let src = match (&it.id, &it.thumb) {
+                                    (Some(id), _) => Src::File { backup, id: id.clone(), name: it.name.clone() },
+                                    (None, Some(th)) => Src::File { backup, id: th.clone(), name: "anteprima.jpg".into() },
+                                    _ => Src::Bytes(Arc::new([])),
+                                };
+                                let model = self.selected_model;
+                                let force_cpu = self.force_cpu;
+                                let task_label = if force_cpu || !GPU.is_gpu_acceleration_available() {
+                                    "Super-risoluzione CPU"
+                                } else {
+                                    "Super-risoluzione AI GPU"
+                                };
+                                self.upscaler_err = None;
+                                self.upscaling = Some(tasks::run(ui.ctx(), task_label, move || {
+                                    let img = images::load_dynamic_image(&src)?;
+                                    upscaler::upscale_configured(&img, model, &GPU, force_cpu)
+                                }));
+                            }
+
+                            if ui.button("✕ Annulla").clicked() {
+                                self.show_ai_modal = false;
+                            }
+                        });
+                    });
+                });
+            }
+
             // Dialog Modale ArtCraft durante l'elaborazione AI
             if self.upscaling.is_some() {
                 ctx.request_repaint(); // animazione fluida continua
@@ -332,12 +516,14 @@ impl Viewer {
                         ui.label(RichText::new("✨ Ricostruzione ad alta risoluzione 4×").size(16.0).strong().color(p.text));
                         ui.add_space(8.0);
 
+                        let is_cpu = self.force_cpu || !GPU.is_gpu_acceleration_available();
                         ui.horizontal_wrapped(|ui| {
-                            theme::chip(ui, &format!("GPU: {}", GPU.name), p.accent);
-                            if GPU.engine_path.is_some() {
-                                theme::chip(ui, "MODELLO: REAL-ESRGAN VULKAN", p.on_accent);
+                            if is_cpu {
+                                theme::chip(ui, "HARDWARE: CPU", Color32::from_rgb(240, 160, 40));
+                                theme::chip(ui, &format!("MODELLO: {}", self.selected_model.title()), p.muted);
                             } else {
-                                theme::chip(ui, "MODELLO: LANCZOS3 + CAS SHARPENER", p.muted);
+                                theme::chip(ui, &format!("GPU: {}", GPU.name), p.accent);
+                                theme::chip(ui, &format!("MODELLO: {}", self.selected_model.title()), p.on_accent);
                             }
                         });
                         ui.add_space(14.0);
@@ -354,10 +540,16 @@ impl Viewer {
                             bar_rect.min + Vec2::new(offset_x, 0.0),
                             Vec2::new(active_w, bar_rect.height()),
                         );
-                        ui.painter().rect_filled(active_rect, 4.0, p.accent);
+                        let bar_color = if is_cpu { Color32::from_rgb(240, 160, 40) } else { p.accent };
+                        ui.painter().rect_filled(active_rect, 4.0, bar_color);
 
                         ui.add_space(10.0);
-                        ui.label(RichText::new("Elaborazione tensoriale GPU in corso…").small().color(p.text));
+                        let msg = if is_cpu {
+                            "Elaborazione su processore CPU in corso (potrebbe richiedere tempo)…"
+                        } else {
+                            "Elaborazione tensoriale GPU in corso…"
+                        };
+                        ui.label(RichText::new(msg).small().color(p.text));
                         ui.label(RichText::new("Ricostruzione micro-dettagli, trame e riduzione rumore").small().color(p.muted));
 
                         ui.add_space(10.0);

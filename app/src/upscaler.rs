@@ -21,6 +21,13 @@ pub struct GpuInfo {
     pub engine_path: Option<PathBuf>,
 }
 
+impl GpuInfo {
+    /// Indica se è disponibile una scheda grafica compatibile e il runtime neurale Vulkan.
+    pub fn is_gpu_acceleration_available(&self) -> bool {
+        self.engine_path.is_some() && self.has_vulkan
+    }
+}
+
 pub static GPU: LazyLock<GpuInfo> = LazyLock::new(detect_gpu);
 
 /// Rileva la GPU presente sul sistema e la disponibilità del motore neurale Vulkan.
@@ -229,24 +236,84 @@ fn contrast_adaptive_sharpening(img: &RgbaImage, sharpness: f32) -> RgbaImage {
     out
 }
 
-/// Super-risoluzione unificata (tenta GPU neurale Real-ESRGAN, con fallback automatico su Lanczos3+CAS).
-pub fn upscale_image(
+/// Modelli neurali e algoritmi disponibili per il restauro e super-risoluzione.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum RestorationModel {
+    /// Modello SOTA per fotografie reali, paesaggi e dettagli naturali
+    #[default]
+    PhotoReal,
+    /// Modello per ritratti, volti ed espressioni fisionomiche
+    PortraitFace,
+    /// Modello per screenshot di app, loghi, testo e illustrazioni
+    AnimeGraphics,
+    /// Algoritmo matematico sinc Lanczos3 + Contrast-Adaptive Sharpening (leggero su CPU)
+    FastCas,
+}
+
+impl RestorationModel {
+    pub fn title(&self) -> &'static str {
+        match self {
+            Self::PhotoReal => "Fotografie & Paesaggi (Real-ESRGAN SOTA)",
+            Self::PortraitFace => "Ritratti & Volti (Dettagli Fisionomici)",
+            Self::AnimeGraphics => "Screenshot, Grafica & Testo",
+            Self::FastCas => "Algoritmo Rapido CAS (Consigliato su CPU)",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::PhotoReal => "Ideale per foto reali e paesaggi: rigenera dettagli ad alta frequenza e rimuove la compressione.",
+            Self::PortraitFace => "Migliora la definizione dei volti, occhi e capelli senza alterare l'identità del soggetto.",
+            Self::AnimeGraphics => "Linee ultra-nitide e superfici uniformi per screenshot di chat, mappe, loghi o disegni.",
+            Self::FastCas => "Ingrandimento matematico istantaneo con Contrast-Adaptive Sharpening. Ideale se usi la CPU.",
+        }
+    }
+
+    pub fn ncnn_model_name(&self) -> &'static str {
+        match self {
+            Self::PhotoReal => "realesrgan-x4plus",
+            Self::PortraitFace => "realesrgan-x4plus",
+            Self::AnimeGraphics => "realesrgan-x4plus-anime",
+            Self::FastCas => "cas",
+        }
+    }
+}
+
+/// Super-risoluzione configurata con selezione modello e fallback trasparente GPU -> CPU.
+pub fn upscale_configured(
     img: &DynamicImage,
+    model: RestorationModel,
     gpu: &GpuInfo,
-    prefer_neural: bool,
+    force_cpu: bool,
 ) -> Result<DynamicImage, String> {
-    if prefer_neural {
+    if !force_cpu && model != RestorationModel::FastCas {
         if let Some(exe) = &gpu.engine_path {
-            match upscale_neural(exe, img, 4, "realesrgan-x4plus") {
-                Ok(res) => return Ok(res),
-                Err(e) => {
-                    eprintln!("Real-ESRGAN Vulkan failed ({e}), falling back to Lanczos3+CAS");
+            if gpu.has_vulkan {
+                match upscale_neural(exe, img, 4, model.ncnn_model_name()) {
+                    Ok(res) => return Ok(res),
+                    Err(e) => {
+                        eprintln!("Elaborazione GPU fallita ({e}), passaggio all'algoritmo CAS di riserva.");
+                    }
                 }
             }
         }
     }
 
     upscale_cas_lanczos(img, 4)
+}
+
+/// Super-risoluzione unificata (tenta GPU neurale Real-ESRGAN, con fallback automatico su Lanczos3+CAS).
+pub fn upscale_image(
+    img: &DynamicImage,
+    gpu: &GpuInfo,
+    prefer_neural: bool,
+) -> Result<DynamicImage, String> {
+    upscale_configured(
+        img,
+        RestorationModel::PhotoReal,
+        gpu,
+        !prefer_neural,
+    )
 }
 
 /// Converte un DynamicImage in ColorImage per egui.
