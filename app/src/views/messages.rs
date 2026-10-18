@@ -133,7 +133,7 @@ impl State {
                         ui.label(RichText::new(&m.from).small().strong().color(p.accent));
                     }
                     if !m.text.is_empty() {
-                        ui.add(egui::Label::new(&m.text).selectable(true));
+                        ui.add(egui::Label::new(&m.text).selectable(true).wrap());
                     }
                     for a in &m.att {
                         let Some(id) = &a.id else {

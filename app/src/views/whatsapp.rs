@@ -653,7 +653,7 @@ impl State {
             if let Some(q) = &m.quote {
                 Frame::new().fill(if m.me { p.on_accent.gamma_multiply(0.15) } else { p.panel_alt }).corner_radius(CornerRadius::same(5)).inner_margin(Margin::symmetric(6, 3)).show(ui, |ui| {
                     ui.label(RichText::new(&q.from).small().strong());
-                    ui.label(RichText::new(short(&q.text, 160)).small());
+                    ui.add(egui::Label::new(RichText::new(short(&q.text, 160)).small()).wrap());
                 });
             }
             let md = m.media.as_ref();
@@ -737,29 +737,29 @@ impl State {
                     let url = format!("https://www.openstreetmap.org/?mlat={0}&mlon={1}#map=16/{0}/{1}", m.lat, m.lon);
                     ui.hyperlink_to(format!("📍 {:.5}, {:.5}", m.lat, m.lon), url);
                     if !m.title.is_empty() {
-                        ui.label(&m.title);
+                        ui.add(egui::Label::new(&m.title).wrap());
                     }
                 }
                 Kind::Contact => {
                     ui.label(RichText::new(format!("👤 {}", m.vcard_name)).strong());
                     if !m.vcard.is_empty() {
                         egui::CollapsingHeader::new("vCard").id_salt(m.pk).show(ui, |ui| {
-                            ui.add(egui::Label::new(RichText::new(&m.vcard).monospace().small()).selectable(true));
+                            ui.add(egui::Label::new(RichText::new(&m.vcard).monospace().small()).selectable(true).wrap());
                         });
                     }
                 }
                 Kind::Link => {
                     if !m.title.is_empty() {
-                        ui.label(RichText::new(format!("🔗 {}", m.title)).strong());
+                        ui.add(egui::Label::new(RichText::new(format!("🔗 {}", m.title)).strong()).wrap());
                     }
                 }
                 Kind::Deleted | Kind::Poll | Kind::Other => {
-                    ui.label(RichText::new(m.label).italics());
+                    ui.add(egui::Label::new(RichText::new(m.label).italics()).wrap());
                 }
                 Kind::Text | Kind::Event | Kind::System => {}
             }
             if caption && !m.text.is_empty() {
-                ui.add(egui::Label::new(&m.text).selectable(true));
+                ui.add(egui::Label::new(&m.text).selectable(true).wrap());
                 // link cliccabili (solo http/https)
                 for url in m.text.split_whitespace().filter(|w| w.starts_with("http://") || w.starts_with("https://")).take(3) {
                     ui.hyperlink_to(RichText::new(short(url, 60)).small(), url);

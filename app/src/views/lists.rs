@@ -1147,7 +1147,7 @@ impl State {
                                                 if !m.from_name.is_empty() && !m.out {
                                                     ui.label(RichText::new(&m.from_name).size(11.0).color(p.accent).strong());
                                                 }
-                                                ui.label(&m.text);
+                                                ui.add(egui::Label::new(&m.text).wrap());
                                                 if m.date > 0.0 {
                                                     ui.weak(RichText::new(fmt_date(m.date)).size(10.0));
                                                 }
