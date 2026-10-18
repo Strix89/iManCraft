@@ -1,6 +1,6 @@
 //! Foto: intera libreria Photos.sqlite (anche elementi solo su iCloud con anteprima), filtri e album; griglia virtualizzata.
 
-use super::{badge, header, paint_thumb, viewer, Env};
+use super::{badge, header, paint_thumb, paint_thumb_opt, viewer, Env};
 use crate::player::fmt_time;
 use crate::tasks::{self, Task};
 use egui::{Sense, Vec2};
@@ -139,8 +139,8 @@ impl State {
                         let (rect, resp) = ui.allocate_exact_size(Vec2::splat(self.side), Sense::click());
                         // video sul dispositivo: primo frame (ffmpeg); foto e iCloud: miniatura iOS
                         match (&p.id, &p.thumb) {
-                            (Some(id), _) if p.video => paint_thumb(ui, env, rect, id, &p.name),
-                            (_, Some(th)) => paint_thumb(ui, env, rect, th, "thumb.jpg"),
+                            (Some(id), _) if p.video => paint_thumb_opt(ui, env, rect, id, &p.name, p.thumb.as_deref(), Some("thumb.jpg")),
+                            (_, Some(th)) => paint_thumb_opt(ui, env, rect, th, "thumb.jpg", p.id.as_deref(), Some(&p.name)),
                             (Some(id), None) => paint_thumb(ui, env, rect, id, &p.name),
                             _ => {}
                         }

@@ -109,11 +109,13 @@ fn worker(inner: &Inner) {
                 q = inner.cv.wait(q).unwrap();
             }
         };
-        // non più disegnata da qualche frame (es. scroll veloce nella griglia): salto, verrà richiesta di nuovo se serve
+        // Salta solo se la coda è congestionata (> 20 elementi) E la richiesta è veramente vecchia (> 180 frame, ~3 secondi).
+        // Non scarta MAI le immagini richieste per il visualizzatore a tutto schermo o ad alta risoluzione (max == 0 o max == 512).
         let now = inner.frame.load(Ordering::Relaxed);
-        {
+        let q_len = inner.queue.lock().unwrap().len();
+        if job.max != 0 && job.max != 512 && q_len > 20 {
             let mut slots = inner.slots.lock().unwrap();
-            if slots.get(&job.key).is_some_and(|s| now.saturating_sub(s.used) > 3) {
+            if slots.get(&job.key).is_some_and(|s| now.saturating_sub(s.used) > 180) {
                 slots.remove(&job.key);
                 continue;
             }
@@ -129,48 +131,53 @@ fn worker(inner: &Inner) {
     }
 }
 
-/// Estensioni che `image` decodifica direttamente (il resto passa da ffmpeg).
-fn direct(name: &str) -> bool {
-    matches!(name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp" | "thumb")
+/// Tenta di decodificare un buffer di byte immagine con più strategie resilienti.
+fn parse_image_bytes(bytes: &[u8]) -> Option<image::DynamicImage> {
+    if bytes.is_empty() {
+        return None;
+    }
+    if let Ok(reader) = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format() {
+        if let Ok(mut dec) = reader.into_decoder() {
+            let orient = image::ImageDecoder::orientation(&mut dec).unwrap_or(image::metadata::Orientation::NoTransforms);
+            if let Ok(mut img) = image::DynamicImage::from_decoder(dec) {
+                img.apply_orientation(orient);
+                return Some(img);
+            }
+        }
+    }
+    if let Ok(mut dec) = image::codecs::jpeg::JpegDecoder::new(Cursor::new(bytes)) {
+        let orient = image::ImageDecoder::orientation(&mut dec).unwrap_or(image::metadata::Orientation::NoTransforms);
+        if let Ok(mut img) = image::DynamicImage::from_decoder(dec) {
+            img.apply_orientation(orient);
+            return Some(img);
+        }
+    }
+    if let Ok(img) = image::load_from_memory(bytes) {
+        return Some(img);
+    }
+    None
 }
 
 /// Carica un DynamicImage a risoluzione piena da una sorgente (usato dal visualizzatore e dall'upscaler).
 pub fn load_dynamic_image(src: &Src) -> Result<image::DynamicImage, String> {
-    let bytes: Vec<u8> = match src {
-        Src::Bytes(b) => b.to_vec(),
-        Src::File { backup, id, name } if direct(name) => match backup.with(|cx| cx.content(id)?.read_all()) {
-            Ok(b) => b,
-            Err(_) => {
-                let b = media::register(backup);
-                media::jpeg(&media::url(b, id), name, None).map_err(|e| e.to_string())?
-            }
-        },
+    match src {
+        Src::Bytes(b) => parse_image_bytes(b).ok_or_else(|| "formato immagine non riconosciuto".into()),
         Src::File { backup, id, name } => {
             let is_video = matches!(name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(), "mp4" | "mov" | "m4v" | "3gp" | "avi");
+            // Se non è video: prova prima la decodifica diretta dei byte del backup (immediata)
             if !is_video {
                 if let Ok(b) = backup.with(|cx| cx.content(id)?.read_all()) {
-                    if let Some(mut dec) = image::ImageReader::new(Cursor::new(&b)).with_guessed_format().ok().and_then(|r| r.into_decoder().ok()) {
-                        let orient = image::ImageDecoder::orientation(&mut dec).unwrap_or(image::metadata::Orientation::NoTransforms);
-                        if let Ok(mut img) = image::DynamicImage::from_decoder(dec) {
-                            img.apply_orientation(orient);
-                            return Ok(img);
-                        }
+                    if let Some(img) = parse_image_bytes(&b) {
+                        return Ok(img);
                     }
                 }
             }
+            // Fallback via ffmpeg (video primo frame, HEIC complesso o formato non standard)
             let b = media::register(backup);
-            media::jpeg(&media::url(b, id), name, None).map_err(|e| e.to_string())?
+            let jpg = media::jpeg(&media::url(b, id), name, None).map_err(|e| e.to_string())?;
+            parse_image_bytes(&jpg).ok_or_else(|| "decodifica immagine fallita anche con ffmpeg".into())
         }
-    };
-
-    let reader = image::ImageReader::new(Cursor::new(&bytes))
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?;
-    let mut dec = reader.into_decoder().map_err(|e| e.to_string())?;
-    let orient = image::ImageDecoder::orientation(&mut dec).unwrap_or(image::metadata::Orientation::NoTransforms);
-    let mut img = image::DynamicImage::from_decoder(dec).map_err(|e| e.to_string())?;
-    img.apply_orientation(orient);
-    Ok(img)
+    }
 }
 
 fn decode(src: &Src, max: u32) -> Result<ColorImage, String> {
@@ -187,3 +194,22 @@ fn decode(src: &Src, max: u32) -> Result<ColorImage, String> {
 pub fn key(b: &Arc<Backup>, id: &str, max: u32) -> String {
     format!("{:p}:{id}:{max}", Arc::as_ptr(b))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_memory_thumb() {
+        let mut img = image::RgbaImage::new(32, 32);
+        for pixel in img.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 0, 255]);
+        }
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Jpeg).unwrap();
+        let src = Src::Bytes(Arc::from(bytes.into_boxed_slice()));
+        let res = decode(&src, 192);
+        assert!(res.is_ok());
+    }
+}
+

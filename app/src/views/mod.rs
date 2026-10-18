@@ -220,15 +220,15 @@ pub fn thumb(ui: &mut egui::Ui, env: &Env, id: &str, name: &str, side: f32) -> e
     resp
 }
 
-/// Disegna l'immagine `id` riempiendo `rect` (ritaglio centrato), con segnaposto durante il caricamento.
-pub fn paint_thumb(ui: &egui::Ui, env: &Env, rect: egui::Rect, id: &str, name: &str) {
+/// Disegna una miniatura con supporto opzionale a un fallback (es. se thumb fallisce o non c'è, prova il file originale).
+pub fn paint_thumb_opt(ui: &egui::Ui, env: &Env, rect: egui::Rect, id: &str, name: &str, fb_id: Option<&str>, fb_name: Option<&str>) {
     let max = (rect.width().max(rect.height()) * ui.ctx().pixels_per_point()).clamp(64.0, 512.0) as u32 / 64 * 64;
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 3.0, env.p.panel_alt);
-    match env.images.get(&images::key(env.backup, id, max), max, || Src::File { backup: env.backup.clone(), id: id.into(), name: name.into() }) {
+    let primary = env.images.get(&images::key(env.backup, id, max), max, || Src::File { backup: env.backup.clone(), id: id.into(), name: name.into() });
+    match primary {
         Img::Ready(t) => {
             let s = t.size_vec2();
-            // ritaglio centrato tipo "cover"
             let (ar, rr) = (s.x / s.y, rect.width() / rect.height());
             let uv = if ar > rr {
                 let w = rr / ar;
@@ -243,9 +243,39 @@ pub fn paint_thumb(ui: &egui::Ui, env: &Env, rect: egui::Rect, id: &str, name: &
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, "…", egui::FontId::proportional(14.0), env.p.muted);
         }
         Img::Failed(_) => {
+            if let (Some(fid), Some(fname)) = (fb_id, fb_name) {
+                if fid != id {
+                    let fallback = env.images.get(&images::key(env.backup, fid, max), max, || Src::File { backup: env.backup.clone(), id: fid.into(), name: fname.into() });
+                    match fallback {
+                        Img::Ready(t) => {
+                            let s = t.size_vec2();
+                            let (ar, rr) = (s.x / s.y, rect.width() / rect.height());
+                            let uv = if ar > rr {
+                                let w = rr / ar;
+                                egui::Rect::from_min_max(egui::pos2((1.0 - w) / 2.0, 0.0), egui::pos2((1.0 + w) / 2.0, 1.0))
+                            } else {
+                                let h = ar / rr;
+                                egui::Rect::from_min_max(egui::pos2(0.0, (1.0 - h) / 2.0), egui::pos2(1.0, (1.0 + h) / 2.0))
+                            };
+                            painter.image(t.id(), rect, uv, egui::Color32::WHITE);
+                            return;
+                        }
+                        Img::Loading => {
+                            painter.text(rect.center(), egui::Align2::CENTER_CENTER, "…", egui::FontId::proportional(14.0), env.p.muted);
+                            return;
+                        }
+                        Img::Failed(_) => {}
+                    }
+                }
+            }
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, short(name, 14), egui::FontId::proportional(10.0), env.p.muted);
         }
     }
+}
+
+/// Disegna l'immagine `id` riempiendo `rect` (ritaglio centrato), con segnaposto durante il caricamento.
+pub fn paint_thumb(ui: &egui::Ui, env: &Env, rect: egui::Rect, id: &str, name: &str) {
+    paint_thumb_opt(ui, env, rect, id, name, None, None);
 }
 
 /// Badge in un angolo della miniatura.

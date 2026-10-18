@@ -302,15 +302,22 @@ impl Viewer {
                             // Fallback automatico su anteprima se l'originale non è leggibile
                             let mut shown_thumb = false;
                             if let Some(th) = &it.thumb {
-                                let th_key = images::key(&it.backup, th, 0);
+                                let th_key = images::key(&it.backup, th, 512);
                                 let th_src = || Src::File { backup: it.backup.clone(), id: th.clone(), name: "t.jpg".into() };
-                                if let Img::Ready(th_t) = images.get(&th_key, 0, th_src) {
-                                    self.image(ui, &th_t, stage);
-                                    let r = egui::Rect::from_min_size(stage.right_top() - Vec2::new(260.0, -10.0), Vec2::new(250.0, 24.0));
-                                    ui.put(r, |ui: &mut egui::Ui| {
-                                        theme::chip(ui, "Anteprima (originale non presente)", p.muted)
-                                    });
-                                    shown_thumb = true;
+                                match images.get(&th_key, 512, th_src) {
+                                    Img::Ready(th_t) => {
+                                        self.image(ui, &th_t, stage);
+                                        let r = egui::Rect::from_min_size(stage.right_top() - Vec2::new(260.0, -10.0), Vec2::new(250.0, 24.0));
+                                        ui.put(r, |ui: &mut egui::Ui| {
+                                            theme::chip(ui, "Anteprima (originale non presente)", p.muted)
+                                        });
+                                        shown_thumb = true;
+                                    }
+                                    Img::Loading => {
+                                        ui.spinner();
+                                        shown_thumb = true;
+                                    }
+                                    _ => {}
                                 }
                             }
                             if !shown_thumb {
@@ -328,7 +335,7 @@ impl Viewer {
                 let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                 // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
-                ui.interact(screen, egui::Id::unique("ai-modal-bg"), egui::Sense::click());
+                ui.interact(screen, ui.make_persistent_id("ai-modal-bg"), egui::Sense::click());
                 ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(190));
                 ui.painter().rect_filled(modal_rect, 6.0, p.panel);
                 ui.painter().rect_stroke(modal_rect, 6.0, Stroke::new(1.5, p.accent), egui::StrokeKind::Outside);
@@ -576,8 +583,15 @@ impl Viewer {
     /// Immagine adattata allo schermo, con zoom (rotella) e spostamento (trascinamento); doppio clic = adatta.
     fn image(&mut self, ui: &mut egui::Ui, t: &egui::TextureHandle, stage: egui::Rect) {
         let size = t.size_vec2();
-        let fit = ((stage.width() - 40.0) / size.x).min((stage.height() - 20.0) / size.y).min(1.0);
-        let resp = ui.interact(stage, egui::Id::unique("imancraft-viewer-img"), egui::Sense::click_and_drag());
+        let scale_to_fit = ((stage.width() - 40.0) / size.x).min((stage.height() - 20.0) / size.y);
+        // Se l'immagine è una miniatura o molto piccola (< 320px), la scaliamo fino a riempire lo stage
+        // così coincide esattamente con i limiti dell'immagine ad alta risoluzione senza salti o sfarfallii.
+        let fit = if size.x < 320.0 || size.y < 320.0 {
+            scale_to_fit
+        } else {
+            scale_to_fit.min(1.0)
+        };
+        let resp = ui.interact(stage, ui.make_persistent_id("imancraft-viewer-img"), egui::Sense::click_and_drag());
         if resp.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {

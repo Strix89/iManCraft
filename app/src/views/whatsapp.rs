@@ -1,6 +1,6 @@
 //! WhatsApp: chat, conversazione, ricerca per intervallo data/ora, galleria, chiamate, export.
 
-use super::{badge, bubble, export_file, fmt_date, fmt_size, header, paint_thumb, save_dialog, short, tz_offset_min, viewer, Env};
+use super::{badge, bubble, export_file, fmt_date, fmt_size, header, paint_thumb, paint_thumb_opt, save_dialog, short, tz_offset_min, viewer, Env};
 use crate::images::{self, Img, Src};
 use crate::player::{fmt_time, Player};
 use crate::tasks::{self, Task};
@@ -661,27 +661,26 @@ impl State {
             match m.kind {
                 Kind::Image | Kind::Video => {
                     let vid = m.kind == Kind::Video;
-                    match md.and_then(|x| x.id.clone().map(|id| (id, x.name.clone())).or_else(|| x.thumb.clone().map(|t| (t, "t.jpg".to_string())))) {
-                        Some((id, name)) => {
-                            // anteprima: .thumb se c'è (più leggera e immediata sia per foto che per video), altrimenti originale
-                            let (pid, pname) = match md.and_then(|x| x.thumb.clone()) {
-                                Some(th) => (th, "t.jpg".to_string()),
-                                None => (id, name),
-                            };
-                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(220.0, 220.0), Sense::click());
-                            paint_thumb(ui, env, rect, &pid, &pname);
-                            if vid {
-                                badge(ui, rect, &format!("▶ {}", fmt_time(md.map_or(0.0, |x| x.duration))), true);
-                            }
-                            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                                let key = md.and_then(|x| x.id.clone().or(x.thumb.clone()));
-                                let k = media.iter().position(|it| it.id.clone().or(it.thumb.clone()) == key).unwrap_or(0);
-                                *env.viewer = Some(viewer::Viewer::new(media.to_vec(), k));
-                            }
+                    let has_media = md.is_some_and(|x| x.id.is_some() || x.thumb.is_some());
+                    if has_media {
+                        let md = md.unwrap();
+                        let (rect, resp) = ui.allocate_exact_size(Vec2::new(220.0, 220.0), Sense::click());
+                        match (&md.thumb, &md.id) {
+                            (Some(th), Some(id)) => paint_thumb_opt(ui, env, rect, th, "t.jpg", Some(id), Some(&md.name)),
+                            (Some(th), None) => paint_thumb(ui, env, rect, th, "t.jpg"),
+                            (None, Some(id)) => paint_thumb(ui, env, rect, id, &md.name),
+                            _ => {}
                         }
-                        None => {
-                            ui.weak(format!("{} — non presente nel backup", m.label));
+                        if vid {
+                            badge(ui, rect, &format!("▶ {}", fmt_time(md.duration)), true);
                         }
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            let key = md.id.clone().or_else(|| md.thumb.clone());
+                            let k = media.iter().position(|it| it.id.clone().or_else(|| it.thumb.clone()) == key).unwrap_or(0);
+                            *env.viewer = Some(viewer::Viewer::new(media.to_vec(), k));
+                        }
+                    } else {
+                        ui.weak(format!("{} — non presente nel backup", m.label));
                     }
                 }
                 Kind::Sticker => match md.and_then(|x| x.id.clone().map(|i| (i, x.name.clone()))) {
@@ -800,9 +799,10 @@ impl State {
             ui.horizontal_wrapped(|ui| {
                 for (k, it) in vis.iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(110.0), Sense::click());
-                    match (&it.id, &it.thumb) {
-                        (_, Some(th)) => paint_thumb(ui, env, rect, th, "t.jpg"),
-                        (Some(id), None) => paint_thumb(ui, env, rect, id, &it.name),
+                    match (&it.thumb, &it.id) {
+                        (Some(th), Some(id)) => paint_thumb_opt(ui, env, rect, th, "t.jpg", Some(id), Some(&it.name)),
+                        (Some(th), None) => paint_thumb(ui, env, rect, th, "t.jpg"),
+                        (None, Some(id)) => paint_thumb(ui, env, rect, id, &it.name),
                         _ => {}
                     }
                     if it.video {
