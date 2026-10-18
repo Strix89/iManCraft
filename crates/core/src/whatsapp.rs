@@ -297,7 +297,7 @@ impl Filter {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WaMedia {
     /// fileID nel backup (None = originale non incluso)
     pub id: Option<String>,
@@ -306,6 +306,10 @@ pub struct WaMedia {
     pub duration: f64,
     /// miniatura .thumb (JPEG)
     pub thumb: Option<String>,
+    /// larghezza video/immagine in pixel (0 = non determinata)
+    pub w: u32,
+    /// altezza video/immagine in pixel (0 = non determinata)
+    pub h: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -452,7 +456,36 @@ impl Render<'_> {
             file_name(xmpp_thumb)
         };
 
-        Some(WaMedia { id, name, size, duration, thumb })
+        let (mut w, mut h) = (0u32, 0u32);
+        if let Some(fid) = &id {
+            let n_lower = name.to_ascii_lowercase();
+            if crate::is_video(&n_lower) || n_lower.ends_with(".mp4") || n_lower.ends_with(".mov") || n_lower.ends_with(".3gp") || n_lower.ends_with(".m4v") {
+                if self.cx.keys.is_none() {
+                    if let Ok(p) = crate::blob_path(self.cx.dir, fid) {
+                        if let Ok(mut f) = std::fs::File::open(&p) {
+                            if let Some((vw, vh)) = crate::media::mp4_dimensions(&mut f) {
+                                w = vw;
+                                h = vh;
+                            }
+                        }
+                    }
+                } else if let Ok(content) = self.cx.content(fid) {
+                    let read_len = content.size.min(262_144);
+                    if let Ok(mut r) = content.reader(0, read_len) {
+                        let mut buf = vec![0u8; read_len as usize];
+                        if std::io::Read::read_exact(&mut r, &mut buf).is_ok() {
+                            let mut cursor = std::io::Cursor::new(buf);
+                            if let Some((vw, vh)) = crate::media::mp4_dimensions(&mut cursor) {
+                                w = vw;
+                                h = vh;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Some(WaMedia { id, name, size, duration, thumb, w, h })
     }
 
     fn message(&self, r: &Row) -> WaMessage {

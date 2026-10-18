@@ -190,6 +190,23 @@ fn time_edit(ui: &mut egui::Ui, t: &mut (u32, u32)) {
     ui.add(egui::DragValue::new(&mut t.1).range(0..=59).custom_formatter(|v, _| format!("{v:02}")));
 }
 
+fn resolution_label(w: u32, h: u32) -> String {
+    let max_dim = w.max(h);
+    let min_dim = w.min(h);
+    let tag = if min_dim >= 2160 || max_dim >= 3840 {
+        "4K"
+    } else if min_dim >= 1080 || max_dim >= 1920 {
+        "FHD"
+    } else if min_dim >= 720 || max_dim >= 1280 {
+        "HD"
+    } else if min_dim >= 480 || max_dim >= 848 {
+        "SD"
+    } else {
+        "qHD"
+    };
+    format!("{w}×{h} ({tag})")
+}
+
 pub struct State {
     chats: Option<Task<Vec<WaChat>>>,
     filter: String,
@@ -575,8 +592,8 @@ impl State {
                     size: md.size as u64,
                     video: m.kind == Kind::Video,
                     cloud: false,
-                    w: 0,
-                    h: 0,
+                    w: md.w as i64,
+                    h: md.h as i64,
                 })
             })
             .collect();
@@ -674,12 +691,37 @@ impl State {
                             paint_thumb_opt(ui, env, rect, pid, prim_name, fb_id, Some(fb_name));
                         }
                         if vid {
-                            badge(ui, rect, &format!("▶ {}", fmt_time(md.duration)), true);
+                            let dur_str = fmt_time(md.duration);
+                            let badge_text = if md.w > 0 && md.h > 0 {
+                                if md.duration > 0.0 {
+                                    format!("▶ {} · {}×{}", dur_str, md.w, md.h)
+                                } else {
+                                    format!("▶ {}×{}", md.w, md.h)
+                                }
+                            } else {
+                                format!("▶ {dur_str}")
+                            };
+                            badge(ui, rect, &badge_text, true);
                         }
-                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let resp = if vid && md.w > 0 && md.h > 0 {
+                            resp.on_hover_text(format!("Video: {} · {} ({})", resolution_label(md.w, md.h), fmt_time(md.duration), fmt_size(md.size as u64)))
+                        } else {
+                            resp
+                        };
+                        if resp.clicked() {
                             let key = md.id.clone().or_else(|| md.thumb.clone());
                             let k = media.iter().position(|it| it.id.clone().or_else(|| it.thumb.clone()) == key).unwrap_or(0);
                             *env.viewer = Some(viewer::Viewer::new(media.to_vec(), k));
+                        }
+                        if vid && md.w > 0 && md.h > 0 {
+                            ui.add_space(2.0);
+                            ui.horizontal(|ui| {
+                                theme::chip(ui, &format!("RISOLUZIONE: {}", resolution_label(md.w, md.h)), if m.me { p.on_accent } else { p.accent });
+                                if md.size > 0.0 {
+                                    ui.label(RichText::new(fmt_size(md.size as u64)).small().color(if m.me { p.on_accent } else { p.muted }));
+                                }
+                            });
                         }
                     } else {
                         ui.weak(format!("{} — non presente nel backup", m.label));
@@ -787,8 +829,8 @@ impl State {
                     size: md.size as u64,
                     video: m.kind == Kind::Video,
                     cloud: false,
-                    w: 0,
-                    h: 0,
+                    w: md.w as i64,
+                    h: md.h as i64,
                 })
             })
             .collect();
@@ -810,8 +852,19 @@ impl State {
                         paint_thumb_opt(ui, env, rect, pid, prim_name, fb_id, Some(fb_name));
                     }
                     if it.video {
-                        badge(ui, rect, "▶", true);
+                        let badge_text = if it.w > 0 && it.h > 0 {
+                            format!("▶ {}×{}", it.w, it.h)
+                        } else {
+                            "▶".to_string()
+                        };
+                        badge(ui, rect, &badge_text, true);
                     }
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let resp = if it.video && it.w > 0 && it.h > 0 {
+                        resp.on_hover_text(format!("Video: {}×{} ({})", it.w, it.h, fmt_size(it.size)))
+                    } else {
+                        resp
+                    };
                     if resp.clicked() {
                         open = Some(k);
                     }

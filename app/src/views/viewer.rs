@@ -151,6 +151,18 @@ impl Viewer {
                     if it.size > 0 {
                         ui.label(fmt_size(it.size));
                     }
+                    let (res_w, res_h) = if let Some((_, player)) = &self.player {
+                        if player.probe.width > 0 && player.probe.height > 0 {
+                            (player.probe.width as i64, player.probe.height as i64)
+                        } else {
+                            (it.w, it.h)
+                        }
+                    } else {
+                        (it.w, it.h)
+                    };
+                    if res_w > 0 && res_h > 0 {
+                        ui.label(RichText::new(format!("{}×{}", res_w, res_h)).color(Color32::from_gray(180)));
+                    }
                     if it.id.is_none() {
                         let note = if it.cloud {
                             format!("☁ {} solo su iCloud: nel backup c'è solo l'anteprima{}", if it.video { "Video" } else { "Foto" }, if it.w > 0 { format!(" (originale {}×{})", it.w, it.h) } else { String::new() })

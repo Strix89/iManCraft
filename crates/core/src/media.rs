@@ -260,6 +260,94 @@ pub fn heic_to_jpeg(b: usize, id: &str) -> Res<Vec<u8>> {
     jpeg(&url(b, id), "x.heic", None)
 }
 
+/// Estrae dimensioni (larghezza, altezza) direttamente dagli atomi moov/trak/tkhd di un file MP4/MOV,
+/// tenendo conto della matrice di rotazione (es. video verticali da smartphone).
+pub fn mp4_dimensions<R: std::io::Read + std::io::Seek>(reader: &mut R) -> Option<(u32, u32)> {
+    use std::io::SeekFrom;
+    let mut header = [0u8; 8];
+    while reader.read_exact(&mut header).is_ok() {
+        let size_u32 = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as u64;
+        let atom_type = &header[4..8];
+        let content_size = if size_u32 == 1 {
+            let mut large_buf = [0u8; 8];
+            if reader.read_exact(&mut large_buf).is_err() {
+                break;
+            }
+            let s = u64::from_be_bytes(large_buf);
+            s.saturating_sub(16)
+        } else if size_u32 == 0 {
+            break;
+        } else {
+            size_u32.saturating_sub(8)
+        };
+
+        if atom_type == b"moov" {
+            let moov_len = (content_size as usize).min(16 * 1024 * 1024);
+            let mut moov_data = vec![0u8; moov_len];
+            if reader.read_exact(&mut moov_data).is_err() {
+                break;
+            }
+            return parse_moov_dimensions(&moov_data);
+        } else if reader.seek(SeekFrom::Current(content_size as i64)).is_err() {
+            break;
+        }
+    }
+    None
+}
+
+fn parse_moov_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    let mut idx = 0;
+    while idx + 8 <= data.len() {
+        let size = u32::from_be_bytes([data[idx], data[idx + 1], data[idx + 2], data[idx + 3]]) as usize;
+        let atom_type = &data[idx + 4..idx + 8];
+        if size < 8 || idx + size > data.len() {
+            break;
+        }
+        if atom_type == b"trak" {
+            if let Some(dim) = parse_trak_dimensions(&data[idx + 8..idx + size]) {
+                if dim.0 > 0 && dim.1 > 0 {
+                    return Some(dim);
+                }
+            }
+        }
+        idx += size;
+    }
+    None
+}
+
+fn parse_trak_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    let mut idx = 0;
+    while idx + 8 <= data.len() {
+        let size = u32::from_be_bytes([data[idx], data[idx + 1], data[idx + 2], data[idx + 3]]) as usize;
+        let atom_type = &data[idx + 4..idx + 8];
+        if size < 8 || idx + size > data.len() {
+            break;
+        }
+        if atom_type == b"tkhd" {
+            let tkhd = &data[idx + 8..idx + size];
+            if tkhd.len() >= 84 {
+                let w_raw = u32::from_be_bytes([tkhd[tkhd.len() - 8], tkhd[tkhd.len() - 7], tkhd[tkhd.len() - 6], tkhd[tkhd.len() - 5]]);
+                let h_raw = u32::from_be_bytes([tkhd[tkhd.len() - 4], tkhd[tkhd.len() - 3], tkhd[tkhd.len() - 2], tkhd[tkhd.len() - 1]]);
+                let w = w_raw >> 16;
+                let h = h_raw >> 16;
+                if w > 0 && h > 0 {
+                    if tkhd.len() >= 44 {
+                        let m = &tkhd[tkhd.len() - 44..tkhd.len() - 8];
+                        let b = i32::from_be_bytes([m[4], m[5], m[6], m[7]]);
+                        let c = i32::from_be_bytes([m[12], m[13], m[14], m[15]]);
+                        if b != 0 || c != 0 {
+                            return Some((h, w));
+                        }
+                    }
+                    return Some((w, h));
+                }
+            }
+        }
+        idx += size;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +358,47 @@ mod tests {
         assert_eq!(parse_range(Some("bytes=2-4"), 10), Some((2, 3)));
         assert_eq!(parse_range(Some("bytes=-3"), 10), Some((7, 3)));
         assert_eq!(parse_range(Some("bytes=20-"), 10), None);
+    }
+
+    #[test]
+    fn test_mp4_dimensions() {
+        use std::io::Cursor;
+        let mut buf = Vec::new();
+        // ftyp
+        buf.extend_from_slice(&(16u32.to_be_bytes()));
+        buf.extend_from_slice(b"ftypisom0000");
+
+        // tkhd (84 bytes body + 8 bytes header = 92)
+        let mut tkhd_body = vec![0u8; 84];
+        // matrix: identità
+        let m_offset = 84 - 44;
+        tkhd_body[m_offset..m_offset + 4].copy_from_slice(&(0x00010000i32.to_be_bytes()));
+        tkhd_body[m_offset + 16..m_offset + 20].copy_from_slice(&(0x00010000i32.to_be_bytes()));
+        tkhd_body[m_offset + 32..m_offset + 36].copy_from_slice(&(0x40000000i32.to_be_bytes()));
+        // w = 1920, h = 1080 (16.16)
+        let dim_offset = 84 - 8;
+        tkhd_body[dim_offset..dim_offset + 4].copy_from_slice(&((1920u32 << 16).to_be_bytes()));
+        tkhd_body[dim_offset + 4..dim_offset + 8].copy_from_slice(&((1080u32 << 16).to_be_bytes()));
+
+        let mut tkhd_atom = Vec::new();
+        tkhd_atom.extend_from_slice(&(92u32.to_be_bytes()));
+        tkhd_atom.extend_from_slice(b"tkhd");
+        tkhd_atom.extend_from_slice(&tkhd_body);
+
+        let mut trak_atom = Vec::new();
+        trak_atom.extend_from_slice(&((tkhd_atom.len() as u32 + 8).to_be_bytes()));
+        trak_atom.extend_from_slice(b"trak");
+        trak_atom.extend_from_slice(&tkhd_atom);
+
+        let mut moov_atom = Vec::new();
+        moov_atom.extend_from_slice(&((trak_atom.len() as u32 + 8).to_be_bytes()));
+        moov_atom.extend_from_slice(b"moov");
+        moov_atom.extend_from_slice(&trak_atom);
+
+        buf.extend_from_slice(&moov_atom);
+
+        let mut cursor = Cursor::new(buf);
+        let res = mp4_dimensions(&mut cursor);
+        assert_eq!(res, Some((1920, 1080)));
     }
 }

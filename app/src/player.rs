@@ -268,6 +268,9 @@ impl Player {
                 self.seek(pos);
             }
             ui.monospace(format!("{} / {}", fmt_time(pos), fmt_time(dur)));
+            if self.probe.width > 0 && self.probe.height > 0 {
+                ui.label(egui::RichText::new(format!("{}×{}", self.probe.width, self.probe.height)).small().color(egui::Color32::from_gray(170)));
+            }
             let mut v = self.volume;
             ui.spacing_mut().slider_width = 60.0;
             if ui.add(egui::Slider::new(&mut v, 0.0..=1.0).show_value(false)).on_hover_text("Volume").changed() {
