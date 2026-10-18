@@ -177,6 +177,35 @@ Usa il menu laterale a scomparsa per consultare i tuoi dati:
 
 ---
 
+## 🗺️ Roadmap & Prossimi Sviluppi
+
+I seguenti obiettivi rappresentano le priorità di sviluppo per le prossime release di iManCraft:
+
+- [ ] **🧠 Restauro Neurale Avanzato per Anteprime iCloud & Media a Bassa Risoluzione**
+  - Integrazione di modelli locali SOTA (*State of the Art*) per ricostruire foto e immagini quando il file originale si trova su iCloud e nel backup locale è presente solo una miniatura compressa o sfocata (120–320px):
+    - **Face Restoration neurale** (modelli *CodeFormer* / *GFPGAN* via runtime ONNX / NCNN con accelerazione GPU Vulkan/DirectML) per ricostruire volti, sguardi e dettagli fisionomici nitidi anche da miniature fortemente degradate.
+    - **General Photo Restoration & Deblurring** (modelli *SwinIR* / *HAT* / *Restormer* e modelli generativi diffusion-guided come *SeeSR/DiffBIR*) per sintetizzare dettagli realistici ad alta frequenza e rimuovere artefatti di compressione JPEG/HEIC.
+    - Pipeline 100% locale, privata ed eseguibile senza ambienti Python esterni (runtime nativo C++/Rust stand-alone).
+
+- [ ] **🐧 Supporto Nativo Linux**
+  - Compilazione e ottimizzazione per distribuzioni Linux (Ubuntu/Debian, Fedora, Arch):
+    - Backend grafico nativo `wgpu` con supporto completo sia per **Wayland** che per **X11**.
+    - Riconoscimento automatico dei percorsi di backup iOS su Linux (es. backup creati tramite `libimobiledevice` / `idevicebackup2`).
+    - Distribuzione in formato universale e portatile **AppImage** e **Flatpak**.
+
+- [ ] **🔓 Brute-force & Password Recovery per Note Protette iOS**
+  - Modulo integrato per il recupero credenziali e la decrittazione delle note bloccate (`NoteStore.sqlite`):
+    - Estrazione automatica dei parametri crittografici Apple (`ZCRYPTOSALT`, `ZCRYPTOWRAPPEDKEY`, `ZCRYPTOITERATIONCOUNT`).
+    - Motore di attacco a forza bruta (brute-force) e a dizionario (dictionary attack) ad alte prestazioni scritto in puro Rust multi-thread (via `rayon` su CPU e compute shaders su GPU Vulkan).
+    - Supporto per wordlist personalizzate (es. `rockyou.txt`) e regole di mutazione per sbloccare note personali protette.
+
+- [ ] **🐛 Bug Fixing & Rifinitura Continua**
+  - Risoluzione delle anomalie residue nel rendering delle anteprime WhatsApp e percorsi alias offline iCloud.
+  - Ottimizzazione del consumo di memoria (VRAM e RAM di sistema) durante l'ispezione di backup di grandi dimensioni (>100 GB).
+  - Garanzia di compatibilità con le variazioni dello schema SQLite introdotte con iOS 17 e iOS 18.
+
+---
+
 ## 📁 Struttura del Progetto
 
 ```
