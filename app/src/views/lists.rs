@@ -126,18 +126,46 @@ impl State {
         if self.notes.is_none() {
             self.notes = Some(tasks::load(ui.ctx(), "Note", env.backup, data::notes));
         }
+        let p = *env.p;
         super::side_panel("notes-list", env.p).show(ui, |ui| {
             header(ui, env.p, "07", "Note", "Note");
             let Some(list) = tasks::show(ui, self.notes.as_ref()) else { return };
             filter_box(ui, &mut self.filter, &format!("Cerca in {} note…", list.len()));
             let f = self.filter.to_lowercase();
-            egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                for (i, n) in list.iter().enumerate().filter(|(_, n)| f.is_empty() || format!("{} {}", n.title, n.text).to_lowercase().contains(&f)) {
+            let filtered: Vec<(usize, &Note)> = list
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| f.is_empty() || format!("{} {}", n.title, n.text).to_lowercase().contains(&f))
+                .collect();
+            egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, 52.0, filtered.len(), |ui, range| {
+                for &(i, n) in &filtered[range] {
+                    let is_sel = self.note_sel == Some(i);
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::click());
+                    if is_sel {
+                        ui.painter().rect_filled(rect, 4.0, p.accent.gamma_multiply(0.18));
+                        ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, p.accent), egui::StrokeKind::Inside);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(rect, 4.0, p.panel_alt);
+                    }
+                    let pt = ui.painter_at(rect);
                     let title = format!("{}{}", if n.locked { "🔒 " } else { "" }, if n.title.is_empty() { "(senza titolo)" } else { &n.title });
-                    let r = ui.selectable_label(self.note_sel == Some(i), RichText::new(super::short(&title, 40)).strong());
-                    ui.weak(format!("{} · {}", n.folder, fmt_date(n.modified)));
-                    ui.separator();
-                    if r.clicked() {
+                    let max_title_chars = ((rect.width() - 20.0) / 7.5).max(10.0) as usize;
+                    pt.text(
+                        egui::pos2(rect.min.x + 8.0, rect.min.y + 6.0),
+                        egui::Align2::LEFT_TOP,
+                        super::short(&title, max_title_chars),
+                        egui::FontId::proportional(13.0),
+                        p.text,
+                    );
+                    pt.text(
+                        egui::pos2(rect.min.x + 8.0, rect.min.y + 26.0),
+                        egui::Align2::LEFT_TOP,
+                        format!("{} · {}", n.folder, fmt_date(n.modified)),
+                        egui::FontId::proportional(11.0),
+                        p.muted,
+                    );
+                    ui.add_space(2.0);
+                    if resp.clicked() {
                         self.note_sel = Some(i);
                     }
                 }
@@ -149,6 +177,23 @@ impl State {
         };
         crate::theme::title(ui, &n.title);
         ui.weak(format!("{} · {}{}", n.folder, fmt_date(n.modified), if n.locked { " · nota protetta da password: solo anteprima" } else { "" }));
+        if n.locked {
+            ui.add_space(6.0);
+            egui::Frame::new()
+                .fill(p.panel_alt)
+                .stroke(egui::Stroke::new(1.0, p.accent))
+                .corner_radius(egui::CornerRadius::same(6))
+                .inner_margin(egui::Margin::same(10))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        crate::theme::chip(ui, "🔒 NOTA PROTETTA", egui::Color32::from_rgb(240, 160, 40));
+                        ui.label(RichText::new("Cifratura Apple iOS attiva").strong().color(p.text));
+                    });
+                    ui.add_space(4.0);
+                    ui.label(RichText::new("Il contenuto completo di questa nota è protetto da cifratura crittografica (PBKDF2/AES). Lo snippet mostrato di seguito è l'anteprima non cifrata memorizzata localmente nel backup. Con il modulo di decrittazione/brute-force potrai recuperare il payload integrale.").small().color(p.muted));
+                });
+            ui.add_space(6.0);
+        }
         ui.separator();
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.add(egui::Label::new(&n.text).selectable(true));

@@ -36,10 +36,26 @@ impl State {
             let f = self.filter.to_lowercase();
             let list: Vec<&Domain> = domains.iter().filter(|d| f.is_empty() || d.name.to_lowercase().contains(&f)).collect();
             let mut pick = None;
-            egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, 20.0, list.len(), |ui, range| {
+            egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, 26.0, list.len(), |ui, range| {
                 for d in &list[range] {
-                    let sel = self.domain.as_deref() == Some(d.name.as_str());
-                    if ui.selectable_label(sel, format!("{}  ({})", super::short(&d.name, 44), d.count)).on_hover_text(&d.name).clicked() {
+                    let is_sel = self.domain.as_deref() == Some(d.name.as_str());
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), egui::Sense::click());
+                    if is_sel {
+                        ui.painter().rect_filled(rect, 3.0, env.p.accent.gamma_multiply(0.18));
+                        ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, env.p.accent), egui::StrokeKind::Inside);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(rect, 3.0, env.p.panel_alt);
+                    }
+                    let pt = ui.painter_at(rect);
+                    let label = format!("{}  ({})", super::short(&d.name, 44), d.count);
+                    pt.text(
+                        egui::pos2(rect.min.x + 6.0, rect.min.y + 4.0),
+                        egui::Align2::LEFT_TOP,
+                        label,
+                        egui::FontId::proportional(12.0),
+                        if is_sel { env.p.text } else { env.p.muted },
+                    );
+                    if resp.on_hover_text(&d.name).clicked() {
                         pick = Some(d.name.clone());
                     }
                 }

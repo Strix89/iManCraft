@@ -26,11 +26,34 @@ impl State {
             filter_box(ui, &mut self.filter, &format!("Cerca tra {} conversazioni…", chats.len()));
             let f = self.filter.to_lowercase();
             let list: Vec<&Chat> = chats.iter().filter(|c| f.is_empty() || c.title.to_lowercase().contains(&f)).collect();
-            egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, 44.0, list.len(), |ui, range| {
+            egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, 52.0, list.len(), |ui, range| {
                 for c in &list[range] {
-                    let r = ui.selectable_label(self.sel == Some(c.id), RichText::new(super::short(&c.title, 38)).strong());
-                    ui.weak(format!("{} · {} msg · {}", c.service, c.count, fmt_date(c.last)));
-                    if r.clicked() && self.sel != Some(c.id) {
+                    let is_sel = self.sel == Some(c.id);
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::click());
+                    if is_sel {
+                        ui.painter().rect_filled(rect, 4.0, env.p.accent.gamma_multiply(0.18));
+                        ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, env.p.accent), egui::StrokeKind::Inside);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(rect, 4.0, env.p.panel_alt);
+                    }
+                    let pt = ui.painter_at(rect);
+                    let max_title_chars = ((rect.width() - 20.0) / 7.5).max(10.0) as usize;
+                    pt.text(
+                        egui::pos2(rect.min.x + 8.0, rect.min.y + 6.0),
+                        egui::Align2::LEFT_TOP,
+                        super::short(&c.title, max_title_chars),
+                        egui::FontId::proportional(13.0),
+                        env.p.text,
+                    );
+                    pt.text(
+                        egui::pos2(rect.min.x + 8.0, rect.min.y + 26.0),
+                        egui::Align2::LEFT_TOP,
+                        format!("{} · {} msg · {}", c.service, c.count, fmt_date(c.last)),
+                        egui::FontId::proportional(11.0),
+                        env.p.muted,
+                    );
+                    ui.add_space(2.0);
+                    if resp.clicked() && self.sel != Some(c.id) {
                         self.sel = Some(c.id);
                         self.sel_title = c.title.clone();
                         let id = c.id;
