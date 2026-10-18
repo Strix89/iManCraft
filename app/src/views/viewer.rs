@@ -46,9 +46,7 @@ pub struct Viewer {
     show_upscaled: bool,
     upscaler_err: Option<String>,
     show_ai_modal: bool,
-    selected_model: upscaler::RestorationModel,
     force_cpu: bool,
-    enable_tta: bool,
     scale: u32,
 }
 
@@ -66,9 +64,7 @@ impl Viewer {
             show_upscaled: false,
             upscaler_err: None,
             show_ai_modal: false,
-            selected_model: upscaler::RestorationModel::UltraEnhance,
             force_cpu: false,
-            enable_tta: false,
             scale: 4,
         }
     }
@@ -336,8 +332,8 @@ impl Viewer {
 
             // Modal di configurazione e avvio restauro AI
             if self.show_ai_modal {
-                let modal_w = 560.0;
-                let modal_h = 630.0;
+                let modal_w = 540.0;
+                let modal_h = 440.0;
                 let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                 // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
@@ -351,17 +347,17 @@ impl Viewer {
                         theme::section_label(ui, p, "01 / RESTAURO & SUPER-RISOLUZIONE AI LOCALE");
                         ui.add_space(4.0);
                         let header_title = if it.cloud || it.id.is_none() {
-                            "✨ Restauro Anteprima iCloud (4× / 8×)"
+                            "✨ Restauro SOTA Anteprima iCloud (4× / 8×)"
                         } else {
-                            "✨ Super-Risoluzione AI Locale (4× / 8×)"
+                            "✨ Super-Risoluzione SOTA Locale (4× / 8×)"
                         };
                         ui.label(RichText::new(header_title).size(16.0).strong().color(p.text));
                         ui.add_space(4.0);
 
                         let subtitle = if it.cloud || it.id.is_none() {
-                            format!("L'originale è solo su iCloud: viene generata un'anteprima potenziata fino a 8× per '{}'.", it.name)
+                            format!("L'originale è solo su iCloud: applicazione del restauro multi-stadio per '{}'.", it.name)
                         } else {
-                            format!("Incrementa la risoluzione di 4 o 8 volte ricostruendo dettagli e trame per '{}'.", it.name)
+                            format!("Pipeline SOTA unificata a 6 stadi per la massima nitidezza fotografica di '{}'.", it.name)
                         };
                         ui.label(RichText::new(subtitle).size(11.5).color(p.muted));
                         ui.add_space(8.0);
@@ -374,15 +370,9 @@ impl Viewer {
                                 let gpu_label = format!("⚡ GPU ({})", if GPU.name.len() > 24 { &GPU.name[..24] } else { &GPU.name });
                                 if ui.selectable_label(!self.force_cpu, gpu_label).clicked() {
                                     self.force_cpu = false;
-                                    if self.selected_model == upscaler::RestorationModel::FastCas {
-                                        self.selected_model = upscaler::RestorationModel::UltraEnhance;
-                                    }
                                 }
                                 if ui.selectable_label(self.force_cpu, "🐌 Processore (CPU)").clicked() {
                                     self.force_cpu = true;
-                                    if self.selected_model == upscaler::RestorationModel::UltraEnhance || self.selected_model == upscaler::RestorationModel::PhotoReal {
-                                        self.selected_model = upscaler::RestorationModel::FastCas;
-                                    }
                                 }
                             } else {
                                 theme::chip(ui, "HARDWARE: SOLO CPU", Color32::from_rgb(240, 160, 40));
@@ -403,13 +393,13 @@ impl Viewer {
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
                                         theme::chip(ui, "GPU ACCELERATA", p.success);
-                                        ui.label(RichText::new("Accelerazione Hardware Attiva").strong().color(p.text));
+                                        ui.label(RichText::new("Accelerazione Hardware Vulkan 1.3 Attiva").strong().color(p.text));
                                     });
                                     ui.add_space(4.0);
-                                    ui.label(RichText::new("⚡ Vulkan 1.3 attivo: elaborazione neurale tensoriale locale (~1-3 secondi a 4×, ~5-8 secondi a 8×).").small().color(p.muted));
+                                    ui.label(RichText::new("⚡ Elaborazione tensoriale GPU ultra-rapida (~1-3s a 4×, ~5-8s a 8×).").small().color(p.muted));
                                 });
                         } else {
-                            // Box Avviso CPU (Requisito esplicito di sicurezza e prestazioni)
+                            // Box Avviso CPU
                             egui::Frame::new()
                                 .fill(Color32::from_rgb(42, 28, 14))
                                 .stroke(Stroke::new(1.0, Color32::from_rgb(220, 140, 20)))
@@ -417,61 +407,33 @@ impl Viewer {
                                 .inner_margin(egui::Margin::same(10))
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
-                                        theme::chip(ui, "⚠ ATTENZIONE CPU", Color32::from_rgb(240, 160, 40));
+                                        theme::chip(ui, "⚠ MODALITÀ CPU", Color32::from_rgb(240, 160, 40));
                                         ui.label(RichText::new("Esecuzione su Processore (CPU)").strong().color(Color32::from_rgb(255, 215, 130)));
                                     });
                                     ui.add_space(4.0);
                                     let warn_msg = if gpu_avail && self.force_cpu {
-                                        "Hai selezionato manualmente la CPU. Il calcolo su processore richiede un uso intensivo di RAM e tempi sensibilmente più lunghi."
+                                        "Hai selezionato manualmente la CPU. Il calcolo su processore richiede più tempo e memoria RAM."
                                     } else {
-                                        "Nessuna GPU accelerata rilevata (o driver Vulkan assenti). L'elaborazione su CPU richiede elevata RAM e tempi prolungati. Su computer con risorse limitate il processo può essere lento o interrompersi per memoria insufficiente."
+                                        "Nessuna GPU accelerata rilevata. L'elaborazione avverrà con algoritmi sinc/CAS ottimizzati per CPU."
                                     };
                                     ui.label(RichText::new(warn_msg).small().color(Color32::from_rgb(240, 220, 180)));
-                                    ui.add_space(3.0);
-                                    ui.label(RichText::new("💡 Consiglio: usa 'Algoritmo Rapido CAS' per un ingrandimento immediato e leggero su CPU.").small().italics().color(Color32::from_rgb(255, 235, 160)));
                                 });
                         }
 
-                        ui.add_space(10.0);
-                        theme::section_label(ui, p, "02 / SELEZIONE MODELLO & ALGORITMI");
+                        ui.add_space(8.0);
+                        theme::section_label(ui, p, "02 / PIPELINE SOTA IMMAGINE PERFETTA (6 STADI)");
                         ui.add_space(4.0);
 
-                        for model in [
-                            upscaler::RestorationModel::UltraEnhance,
-                            upscaler::RestorationModel::PhotoReal,
-                            upscaler::RestorationModel::PortraitFace,
-                            upscaler::RestorationModel::AnimeGraphics,
-                            upscaler::RestorationModel::FastCas,
-                        ] {
-                            let is_selected = self.selected_model == model;
-                            let title = model.title();
-                            let radio_text = if model == upscaler::RestorationModel::FastCas && is_cpu_mode {
-                                format!("⚡ {title} (Consigliato per CPU)")
-                            } else {
-                                title.to_string()
-                            };
-
-                            if ui.selectable_label(is_selected, radio_text).clicked() {
-                                self.selected_model = model;
-                            }
-                        }
-
-                        ui.add_space(4.0);
                         egui::Frame::new()
                             .fill(p.panel_alt)
-                            .corner_radius(egui::CornerRadius::same(3))
-                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .stroke(Stroke::new(1.0, p.line))
+                            .corner_radius(egui::CornerRadius::same(4))
+                            .inner_margin(egui::Margin::same(8))
                             .show(ui, |ui| {
-                                ui.label(RichText::new(self.selected_model.description()).small().color(p.muted));
+                                ui.label(RichText::new("✨ Ingegneria di restauro a 6 passaggi paralleli sempre attiva:").strong().small().color(p.text));
+                                ui.add_space(3.0);
+                                ui.label(RichText::new("1. Denoise Bilaterale Edge-Preserving  •  2. Super-Risoluzione Neurale Real-ESRGAN x4plus (Vulkan)\n3. Fedeltà Cromatica YCbCr / Wavelet  •  4. Recupero Dinamico Ombre e Mezzitoni\n5. Contrast-Adaptive Sharpening AMD CAS  •  6. Micro-Texture Fotografica Organica").small().color(p.muted));
                             });
-
-                        if !is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut self.enable_tta, "Massima Accuratezza (TTA 8× Pass)");
-                                ui.label(RichText::new("Averaging multi-angolare D4: elimina artefatti ed esalta micro-dettagli").small().color(p.muted));
-                            });
-                        }
 
                         ui.add_space(8.0);
                         theme::section_label(ui, p, "03 / FATTORE D'INGRANDIMENTO");
@@ -492,15 +454,13 @@ impl Viewer {
                         // Pulsanti azione
                         ui.horizontal(|ui| {
                             let scale = self.scale;
-                            let action_label = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
-                                format!("⚠ Procedi comunque su CPU ({}× Lento)", scale)
-                            } else if is_cpu_mode {
-                                format!("⚡ Avvia Restauro Rapido CAS ({}×)", scale)
+                            let action_label = if is_cpu_mode {
+                                format!("⚡ Avvia Restauro SOTA CPU ({}×)", scale)
                             } else {
-                                format!("⚡ Avvia Restauro con GPU ({}×)", scale)
+                                format!("⚡ Avvia Restauro SOTA con GPU ({}×)", scale)
                             };
 
-                            let start_clicked = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
+                            let start_clicked = if is_cpu_mode {
                                 ui.button(RichText::new(&action_label).color(Color32::from_rgb(255, 200, 100))).clicked()
                             } else {
                                 theme::primary(ui, p, &action_label).clicked()
@@ -510,16 +470,12 @@ impl Viewer {
                                 self.show_ai_modal = false;
                                 let backup = it.backup.clone();
                                 let it_clone = it.clone();
-                                let model = self.selected_model;
                                 let scale = self.scale;
                                 let force_cpu = self.force_cpu;
-                                let enable_tta = self.enable_tta;
                                 let task_label = if force_cpu || !GPU.is_gpu_acceleration_available() {
-                                    format!("Super-risoluzione CPU ({}×)", scale)
-                                } else if model == upscaler::RestorationModel::UltraEnhance {
-                                    format!("Pipeline SOTA Immagine Perfetta (GPU {}×)", scale)
+                                    format!("Pipeline SOTA CPU ({}×)", scale)
                                 } else {
-                                    format!("Super-risoluzione AI GPU ({}×)", scale)
+                                    format!("Pipeline SOTA Immagine Perfetta (GPU {}×)", scale)
                                 };
                                 self.upscaler_err = None;
                                 self.upscaling = Some(tasks::run(ui.ctx(), task_label, move || {
@@ -550,7 +506,7 @@ impl Viewer {
                                         }
                                     };
 
-                                    upscaler::upscale_configured(&img, model, scale, &GPU, force_cpu, enable_tta)
+                                    upscaler::upscale_configured(&img, upscaler::RestorationModel::UltraEnhance, scale, &GPU, force_cpu, false)
                                 }));
                             }
 
@@ -577,18 +533,19 @@ impl Viewer {
                     ui.vertical(|ui| {
                         theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE AI");
                         ui.add_space(4.0);
-                        ui.label(RichText::new("✨ Ricostruzione ad alta risoluzione 4×").size(16.0).strong().color(p.text));
+                        ui.label(RichText::new(format!("✨ Ricostruzione SOTA Immagine Perfetta ({}×)", self.scale)).size(16.0).strong().color(p.text));
                         ui.add_space(8.0);
 
                         let is_cpu = self.force_cpu || !GPU.is_gpu_acceleration_available();
                         ui.horizontal_wrapped(|ui| {
                             if is_cpu {
                                 theme::chip(ui, "HARDWARE: CPU", Color32::from_rgb(240, 160, 40));
-                                theme::chip(ui, &format!("MODELLO: {}", self.selected_model.title()), p.muted);
+                                theme::chip(ui, "PIPELINE SOTA (6 STADI)", p.muted);
                             } else {
                                 theme::chip(ui, &format!("GPU: {}", GPU.name), p.accent);
-                                theme::chip(ui, &format!("MODELLO: {}", self.selected_model.title()), p.on_accent);
+                                theme::chip(ui, "PIPELINE SOTA (6 STADI)", p.on_accent);
                             }
+                            theme::chip(ui, &format!("SCALA: {}×", self.scale), p.muted);
                         });
                         ui.add_space(14.0);
 
