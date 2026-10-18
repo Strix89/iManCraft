@@ -1,0 +1,33 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Output di distribuzione e release
+/dist/
+
+# File specifici della toolchain locale (usa config.toml.example come riferimento)
+.cargo/config.toml
+
+# Binari e modelli pesanti del motore neurale (inclusi negli archivi di release, non tracciati in git)
+/tools/upscaler/*.exe
+/tools/upscaler/*.dll
+/tools/upscaler/*.zip
+/tools/upscaler/models/
+/tools/upscaler/*.mp4
+/tools/upscaler/*.jpg
+
+# Log, file temporanei e scratch
+*.log
+*.tmp
+scratch_*.py
+scratch_*.rs
+
+# File di sistema e IDE
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

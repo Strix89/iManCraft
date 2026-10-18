@@ -1,0 +1,22 @@
+[package]
+name = "imancraft-core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "imancraft_core"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["serialize"] }
+aes = "0.8"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha1 = "0.10"
+sha2 = "0.10"
+plist = "1"
+tiny_http = "0.12"
+serde_json = "1"
+flate2 = "1"
+form_urlencoded = "1"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+rust_xlsxwriter = { version = "0.79", default-features = false }
+

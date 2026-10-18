@@ -1,0 +1,61 @@
+================================================================================
+ IManCraft v0.2.0 — Viewer, Esploratore & Analisi Forense Backup iOS (64-bit)
+================================================================================
+
+IManCraft è un'applicazione nativa per Windows scritta in puro Rust (egui + wgpu)
+per l'esplorazione, la consultazione e l'esportazione forense dei backup di
+dispositivi Apple (iPhone, iPad, iPod Touch) creati con iTunes, Finder o iMazing.
+
+CARATTERISTICHE PRINCIPALI:
+- 100% Autonomo: non richiede servizi Apple (Apple Mobile Device Service o iTunes).
+- Sola Lettura: non modifica mai i backup originali.
+- Sicurezza Totale: supporto per backup cifrati con chiavi e database decifrati
+  esclusivamente in memoria RAM (nessun dato in chiaro viene salvato su disco).
+- 18 Sezioni di analisi:
+  * Discover: panoramica del dispositivo, ripartizione memoria per categoria
+    (Foto, App, Audio, Video, Altro), 8 azioni rapide e dettagli tecnici.
+  * Messaggi & WhatsApp: conversazioni complete a bolle, note vocali con player,
+    allegati multimediali, ricerca temporale, export Excel (XLSX) ed export HTML
+    responsivo pronto per la stampa o salvataggio nativo in PDF.
+  * Foto & Video: rullino fotografico, album, miniature, anteprime iCloud e
+    funzione di Esportazione Massiva (Bulk Export).
+  * Contatti & Note: rubrica con export vCard (.vcf) ed Excel; note con decodifica
+    Protobuf del testo completo.
+  * Calendari & Promemoria: eventi con export iCalendar (.ics) ed Excel; promemoria
+    iOS 13+ con liste, scadenze e priorità.
+  * Chiamate, Segreteria & Memo Vocali: registro chiamate con export Excel; messaggi
+    segreteria telefonica (.amr) e registrazioni memo vocali (.m4a) esportabili.
+  * Safari: cronologia di navigazione e preferiti/reading list con export HTML.
+  * Rilevamento Spyware: scansione forense offline contro indicatori di compromissione
+    (IOC) di minacce mirate come Pegasus (NSO Group) e Predator (Cytrox).
+  * Backup Extractor: esportazione guidata dell'intero backup in cartelle ordinate.
+  * Ricerca Globale: ricerca unificata istantanea su tutti i database contemporaneamente.
+  * Snapshot iMazing (Versions.db): cronologia e timeline dei backup incrementali.
+  * Container App (.imazingapp): estrazione della sandbox delle singole app in archivi ZIP standard.
+
+--------------------------------------------------------------------------------
+ CONTENUTO DEL PACCHETTO
+--------------------------------------------------------------------------------
+1. imancraft.exe        - Interfaccia grafica nativa (GUI)
+2. imancraft-cli.exe    - Strumento da riga di comando per automazioni e terminale
+3. sqlite3.dll          - Motore database SQLite (obbligatorio, deve rimanere accanto agli .exe)
+4. assets/imancraft.ico - Icona applicazione per creare collegamenti sul desktop
+5. Avvia IManCraft.bat  - Script per avviare rapidamente l'applicazione
+
+--------------------------------------------------------------------------------
+ SCORCIATOIE DA TASTIERA
+--------------------------------------------------------------------------------
+ Ctrl + D : Schermata Discover (Panoramica e azioni rapide)
+ Ctrl + F : Ricerca Globale unificata
+ Ctrl + E : Backup Extractor (Esportazione di massa)
+ Ctrl + O : Aggiungi cartella di backup da esplorare
+ Ctrl + R : Aggiorna e ri-scansiona i backup su disco
+ Ctrl + H : Cronologia delle Operazioni eseguite
+ Ctrl + , : Impostazioni (Tema chiaro/scuro e colore d'accento)
+
+--------------------------------------------------------------------------------
+ REQUISITI OPZIONALI
+--------------------------------------------------------------------------------
+- Per la visualizzazione delle foto in formato Apple HEIC/HEIF e la riproduzione
+  dei video nel lettore interno, è consigliato avere `ffmpeg` installato nel sistema
+  (es. tramite winget: `winget install Gyan.FFmpeg`).

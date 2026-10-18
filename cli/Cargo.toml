@@ -1,0 +1,12 @@
+[package]
+name = "imancraft-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "imancraft-cli"
+path = "src/main.rs"
+
+[dependencies]
+imancraft-core = { path = "../crates/core" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

@@ -1,0 +1,21 @@
+[package]
+name = "imancraft"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "imancraft"
+path = "src/main.rs"
+
+[dependencies]
+imancraft-core = { path = "../crates/core" }
+eframe = { version = "0.37", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "persistence"] }
+egui = "0.37"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+egui_extras = { version = "0.37", default-features = false, features = ["datepicker", "serde"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+rfd = "0.17"
+rodio = { version = "0.23", default-features = false, features = ["playback"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+serde = { version = "1", features = ["derive"] }
+poll-promise = "0.3"

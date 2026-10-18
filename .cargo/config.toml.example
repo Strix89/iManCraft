@@ -1,0 +1,15 @@
+# Esempio di configurazione Cargo per IManCraft
+# Se utilizzi la toolchain Windows standard (x86_64-pc-windows-msvc), è sufficiente la sezione [env].
+# Se utilizzi la toolchain GNU senza compilatore C, vedi CLAUDE.md per i dettagli su llvm-dlltool e rust-lld.
+
+[env]
+# rusqlite si linka a lib/sqlite3.dll tramite lib/libsqlite3.dll.a
+SQLITE3_LIB_DIR = { value = "lib", relative = true }
+
+# Opzionale per toolchain x86_64-pc-windows-gnu:
+# [target.x86_64-pc-windows-gnu]
+# linker = "<percorso_rustup>/bin/rust-lld.exe"
+# rustflags = [
+#   "-C", "dlltool=<percorso_rustup>/bin/llvm-dlltool.exe",
+#   "-C", "linker-flavor=ld.lld",
+# ]
