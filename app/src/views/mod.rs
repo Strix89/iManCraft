@@ -240,24 +240,6 @@ pub fn paint_thumb_opt(ui: &egui::Ui, env: &Env, rect: egui::Rect, id: &str, nam
             painter.image(t.id(), rect, uv, egui::Color32::WHITE);
         }
         Img::Loading => {
-            if let (Some(fid), Some(fname)) = (fb_id, fb_name) {
-                if fid != id {
-                    let fallback = env.images.get(&images::key(env.backup, fid, max), max, || Src::File { backup: env.backup.clone(), id: fid.into(), name: fname.into() });
-                    if let Img::Ready(t) = fallback {
-                        let s = t.size_vec2();
-                        let (ar, rr) = (s.x / s.y, rect.width() / rect.height());
-                        let uv = if ar > rr {
-                            let w = rr / ar;
-                            egui::Rect::from_min_max(egui::pos2((1.0 - w) / 2.0, 0.0), egui::pos2((1.0 + w) / 2.0, 1.0))
-                        } else {
-                            let h = ar / rr;
-                            egui::Rect::from_min_max(egui::pos2(0.0, (1.0 - h) / 2.0), egui::pos2(1.0, (1.0 + h) / 2.0))
-                        };
-                        painter.image(t.id(), rect, uv, egui::Color32::WHITE);
-                        return;
-                    }
-                }
-            }
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, "…", egui::FontId::proportional(14.0), env.p.muted);
         }
         Img::Failed(_) => {
