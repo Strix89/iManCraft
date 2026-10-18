@@ -1687,6 +1687,7 @@ dependencies = [
  "imancraft-core",
  "jiff",
  "poll-promise",
+ "rayon",
  "rfd",
  "rodio",
  "serde",

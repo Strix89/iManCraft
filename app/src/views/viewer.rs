@@ -48,6 +48,7 @@ pub struct Viewer {
     show_ai_modal: bool,
     selected_model: upscaler::RestorationModel,
     force_cpu: bool,
+    enable_tta: bool,
 }
 
 impl Viewer {
@@ -64,8 +65,9 @@ impl Viewer {
             show_upscaled: false,
             upscaler_err: None,
             show_ai_modal: false,
-            selected_model: upscaler::RestorationModel::PhotoReal,
+            selected_model: upscaler::RestorationModel::UltraEnhance,
             force_cpu: false,
+            enable_tta: false,
         }
     }
 
@@ -177,9 +179,10 @@ impl Viewer {
                                     };
                                     let model = self.selected_model;
                                     let force_cpu = self.force_cpu;
+                                    let enable_tta = self.enable_tta;
                                     self.export = Some(tasks::run(ui.ctx(), "Salvataggio immagine migliorata", move || {
                                         let img = images::load_dynamic_image(&src)?;
-                                        let up = upscaler::upscale_configured(&img, model, &GPU, force_cpu)?;
+                                        let up = upscaler::upscale_configured(&img, model, &GPU, force_cpu, enable_tta)?;
                                         let mut f = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
                                         up.write_to(&mut f, image::ImageFormat::Jpeg).map_err(|e| e.to_string())
                                     }));
@@ -330,8 +333,8 @@ impl Viewer {
 
             // Modal di configurazione e avvio restauro AI
             if self.show_ai_modal {
-                let modal_w = 520.0;
-                let modal_h = 475.0;
+                let modal_w = 560.0;
+                let modal_h = 560.0;
                 let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                 // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
@@ -369,12 +372,12 @@ impl Viewer {
                                 if ui.selectable_label(!self.force_cpu, gpu_label).clicked() {
                                     self.force_cpu = false;
                                     if self.selected_model == upscaler::RestorationModel::FastCas {
-                                        self.selected_model = upscaler::RestorationModel::PhotoReal;
+                                        self.selected_model = upscaler::RestorationModel::UltraEnhance;
                                     }
                                 }
                                 if ui.selectable_label(self.force_cpu, "🐌 Processore (CPU)").clicked() {
                                     self.force_cpu = true;
-                                    if self.selected_model == upscaler::RestorationModel::PhotoReal {
+                                    if self.selected_model == upscaler::RestorationModel::UltraEnhance || self.selected_model == upscaler::RestorationModel::PhotoReal {
                                         self.selected_model = upscaler::RestorationModel::FastCas;
                                     }
                                 }
@@ -427,10 +430,11 @@ impl Viewer {
                         }
 
                         ui.add_space(10.0);
-                        theme::section_label(ui, p, "02 / SELEZIONE MODELLO");
+                        theme::section_label(ui, p, "02 / SELEZIONE MODELLO & ALGORITMI");
                         ui.add_space(4.0);
 
                         for model in [
+                            upscaler::RestorationModel::UltraEnhance,
                             upscaler::RestorationModel::PhotoReal,
                             upscaler::RestorationModel::PortraitFace,
                             upscaler::RestorationModel::AnimeGraphics,
@@ -458,7 +462,15 @@ impl Viewer {
                                 ui.label(RichText::new(self.selected_model.description()).small().color(p.muted));
                             });
 
-                        ui.add_space(12.0);
+                        if !is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut self.enable_tta, "Massima Accuratezza (TTA 8× Pass)");
+                                ui.label(RichText::new("Averaging multi-angolare D4: elimina artefatti ed esalta micro-dettagli").small().color(p.muted));
+                            });
+                        }
+
+                        ui.add_space(10.0);
                         // Pulsanti azione
                         ui.horizontal(|ui| {
                             let action_label = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
@@ -485,15 +497,18 @@ impl Viewer {
                                 };
                                 let model = self.selected_model;
                                 let force_cpu = self.force_cpu;
+                                let enable_tta = self.enable_tta;
                                 let task_label = if force_cpu || !GPU.is_gpu_acceleration_available() {
                                     "Super-risoluzione CPU"
+                                } else if model == upscaler::RestorationModel::UltraEnhance {
+                                    "Pipeline SOTA Immagine Perfetta (GPU 4×)"
                                 } else {
                                     "Super-risoluzione AI GPU"
                                 };
                                 self.upscaler_err = None;
                                 self.upscaling = Some(tasks::run(ui.ctx(), task_label, move || {
                                     let img = images::load_dynamic_image(&src)?;
-                                    upscaler::upscale_configured(&img, model, &GPU, force_cpu)
+                                    upscaler::upscale_configured(&img, model, &GPU, force_cpu, enable_tta)
                                 }));
                             }
 
