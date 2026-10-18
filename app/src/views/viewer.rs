@@ -42,7 +42,7 @@ pub struct Viewer {
     export: Option<Task<()>>,
     // Super-risoluzione AI
     upscaling: Option<Task<image::DynamicImage>>,
-    upscaled: Option<(usize, egui::TextureHandle, u32, u32)>,
+    upscaled: Option<(usize, egui::TextureHandle, u32, u32, Arc<image::DynamicImage>)>,
     show_upscaled: bool,
     upscaler_err: Option<String>,
     show_ai_modal: bool,
@@ -96,9 +96,18 @@ impl Viewer {
             if let Some(res) = task.ready() {
                 match res {
                     Ok(dyn_img) => {
-                        let color_img = upscaler::to_color_image(dyn_img);
+                        let w = dyn_img.width();
+                        let h = dyn_img.height();
+                        // Per il viewport egui/wgpu, limitiamo la texture a max 4096 px
+                        // per non superare max_texture_dimension_2d hardware e non saturare la VRAM
+                        let display_img = if w > 4096 || h > 4096 {
+                            dyn_img.thumbnail(4096, 4096)
+                        } else {
+                            dyn_img.clone()
+                        };
+                        let color_img = upscaler::to_color_image(&display_img);
                         let tex = ctx.load_texture("imancraft-upscaled", color_img, egui::TextureOptions::LINEAR);
-                        self.upscaled = Some((self.i, tex, dyn_img.width(), dyn_img.height()));
+                        self.upscaled = Some((self.i, tex, w, h, Arc::new(dyn_img.clone())));
                         self.show_upscaled = true;
                         self.upscaler_err = None;
                     }
@@ -169,25 +178,16 @@ impl Viewer {
                         // Controlli Super-Risoluzione AI
                         let is_upscaled = self.upscaled.as_ref().map(|u| u.0) == Some(self.i);
                         if is_upscaled {
-                            let (_, _, uw, uh) = self.upscaled.as_ref().unwrap();
-                            if ui.add_enabled(!busy, egui::Button::new("⬇ Salva 4× JPEG…")).clicked() {
+                            let (_, _, uw, uh, full_img) = self.upscaled.as_ref().unwrap();
+                            let scale = self.scale;
+                            let btn_label = format!("⬇ Salva {scale}× JPEG…");
+                            if ui.add_enabled(!busy, egui::Button::new(btn_label)).clicked() {
                                 let base = it.name.rsplit_once('.').map_or(it.name.as_str(), |x| x.0);
-                                let scale = self.scale;
                                 if let Some(dest) = save_dialog(&format!("{base}-AI-{scale}x.jpg")) {
-                                    let backup = it.backup.clone();
-                                    let src = match (&it.id, &it.thumb) {
-                                        (Some(id), _) => Src::File { backup, id: id.clone(), name: it.name.clone() },
-                                        (None, Some(th)) => Src::File { backup, id: th.clone(), name: "anteprima.jpg".into() },
-                                        _ => Src::Bytes(Arc::new([])),
-                                    };
-                                    let model = self.selected_model;
-                                    let force_cpu = self.force_cpu;
-                                    let enable_tta = self.enable_tta;
+                                    let full_img = full_img.clone();
                                     self.export = Some(tasks::run(ui.ctx(), "Salvataggio immagine migliorata", move || {
-                                        let img = images::load_dynamic_image(&src)?;
-                                        let up = upscaler::upscale_configured(&img, model, scale, &GPU, force_cpu, enable_tta)?;
                                         let mut f = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
-                                        up.write_to(&mut f, image::ImageFormat::Jpeg).map_err(|e| e.to_string())
+                                        full_img.write_to(&mut f, image::ImageFormat::Jpeg).map_err(|e| e.to_string())
                                     }));
                                 }
                             }
@@ -266,7 +266,7 @@ impl Viewer {
                     // Se è attiva la visualizzazione super-risolta:
                     if self.show_upscaled && self.upscaled.as_ref().map(|u| u.0) == Some(self.i) {
                         let (tex, w, h) = {
-                            let (_, t, w, h) = self.upscaled.as_ref().unwrap();
+                            let (_, t, w, h, _) = self.upscaled.as_ref().unwrap();
                             (t.clone(), *w, *h)
                         };
                         self.image(ui, &tex, stage);
@@ -509,11 +509,7 @@ impl Viewer {
                             if start_clicked {
                                 self.show_ai_modal = false;
                                 let backup = it.backup.clone();
-                                let src = match (&it.id, &it.thumb) {
-                                    (Some(id), _) => Src::File { backup, id: id.clone(), name: it.name.clone() },
-                                    (None, Some(th)) => Src::File { backup, id: th.clone(), name: "anteprima.jpg".into() },
-                                    _ => Src::Bytes(Arc::new([])),
-                                };
+                                let it_clone = it.clone();
                                 let model = self.selected_model;
                                 let scale = self.scale;
                                 let force_cpu = self.force_cpu;
@@ -527,7 +523,33 @@ impl Viewer {
                                 };
                                 self.upscaler_err = None;
                                 self.upscaling = Some(tasks::run(ui.ctx(), task_label, move || {
-                                    let img = images::load_dynamic_image(&src)?;
+                                    // Caricamento resiliente: prova prima l'originale (se non solo su iCloud), poi l'anteprima
+                                    let img = if !it_clone.cloud {
+                                        if let Some(id) = &it_clone.id {
+                                            let src = Src::File { backup: backup.clone(), id: id.clone(), name: it_clone.name.clone() };
+                                            images::load_dynamic_image(&src).ok()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    };
+
+                                    let img = match img {
+                                        Some(im) => im,
+                                        None => {
+                                            if let Some(th) = &it_clone.thumb {
+                                                let src = Src::File { backup: backup.clone(), id: th.clone(), name: "anteprima.jpg".into() };
+                                                images::load_dynamic_image(&src)?
+                                            } else if let Some(id) = &it_clone.id {
+                                                let src = Src::File { backup: backup.clone(), id: id.clone(), name: it_clone.name.clone() };
+                                                images::load_dynamic_image(&src)?
+                                            } else {
+                                                return Err("Nessuna sorgente immagine valida nel backup".into());
+                                            }
+                                        }
+                                    };
+
                                     upscaler::upscale_configured(&img, model, scale, &GPU, force_cpu, enable_tta)
                                 }));
                             }

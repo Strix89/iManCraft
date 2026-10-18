@@ -123,26 +123,38 @@ pub fn find_neural_engine() -> Option<PathBuf> {
     None
 }
 
-/// Super-risoluzione neurale via Vulkan su GPU (NVIDIA / AMD) con supporto TTA.
+/// Super-risoluzione neurale via Vulkan su GPU (NVIDIA / AMD) con supporto TTA e tiling memory-safe.
 pub fn upscale_neural(
     exe: &Path,
     img: &DynamicImage,
     scale: u32,
     model: &str,
     enable_tta: bool,
+    tile_size: u32,
 ) -> Result<DynamicImage, String> {
     let temp_dir = std::env::temp_dir();
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(12345);
-    let in_path = temp_dir.join(format!("imancraft_sr_in_{nonce}.png"));
-    let out_path = temp_dir.join(format!("imancraft_sr_out_{nonce}.png"));
 
-    img.save_with_format(&in_path, ImageFormat::Png)
-        .map_err(|e| format!("Salvataggio temporaneo fallito: {e}"))?;
+    // Per immagini medie e grandi (>500k pixel) utilizziamo JPEG ad altissima qualità (q98):
+    // il tempo di codifica e decodifica su disco passa da ~8-15s (PNG) a <100ms, risparmiando gigabyte di RAM.
+    let use_jpg = img.width().saturating_mul(img.height()) > 500_000;
+    let ext = if use_jpg { "jpg" } else { "png" };
+    let in_path = temp_dir.join(format!("imancraft_sr_in_{nonce}.{ext}"));
+    let out_path = temp_dir.join(format!("imancraft_sr_out_{nonce}.{ext}"));
+
+    if use_jpg {
+        let mut f = std::fs::File::create(&in_path).map_err(|e| format!("Salvataggio temporaneo fallito: {e}"))?;
+        img.write_to(&mut f, ImageFormat::Jpeg).map_err(|e| format!("Salvataggio JPEG fallito: {e}"))?;
+    } else {
+        img.save_with_format(&in_path, ImageFormat::Png)
+            .map_err(|e| format!("Salvataggio temporaneo fallito: {e}"))?;
+    }
 
     let models_dir = exe.parent().map(|p| p.join("models")).unwrap_or_else(|| PathBuf::from("models"));
+    let tile_str = tile_size.to_string();
 
     let mut cmd = Command::new(exe);
     cmd.args([
@@ -156,6 +168,8 @@ pub fn upscale_neural(
         model,
         "-m",
         models_dir.to_str().unwrap_or("models"),
+        "-t",
+        &tile_str,
         "-g",
         "0", // GPU device 0 (NVIDIA / AMD)
     ]);
@@ -187,7 +201,7 @@ pub fn upscale_neural(
 /// e blocchi 8×8 prima della super-risoluzione, impedendo all'IA di allucinare dettagli spuri.
 pub fn edge_preserving_denoise(img: &RgbaImage, sigma_spatial: f32, sigma_range: f32) -> RgbaImage {
     let (w, h) = img.dimensions();
-    if w < 3 || h < 3 {
+    if w < 3 || h < 3 || w > 2048 || h > 2048 {
         return img.clone();
     }
     let mut out = img.clone();
@@ -257,25 +271,36 @@ pub fn edge_preserving_denoise(img: &RgbaImage, sigma_spatial: f32, sigma_range:
 /// autentica dell'immagine originale, eliminando le alterazioni di incarnato e viraggi colore dell'IA.
 pub fn chroma_color_fidelity_fusion(original: &DynamicImage, upscaled: &DynamicImage, blend_factor: f32) -> DynamicImage {
     let (up_w, up_h) = upscaled.dimensions();
-    let orig_resized = original.resize_exact(up_w, up_h, image::imageops::FilterType::Lanczos3);
-    let orig_rgba = orig_resized.to_rgba8();
+    let (orig_w, orig_h) = original.dimensions();
+    if orig_w == 0 || orig_h == 0 || up_w == 0 || up_h == 0 {
+        return upscaled.clone();
+    }
+    let orig_rgba = original.to_rgba8();
+    let orig_raw = orig_rgba.as_raw();
     let up_rgba = upscaled.to_rgba8();
+    let up_raw = up_rgba.as_raw();
 
     let mut out = up_rgba.clone();
     let out_raw = &mut (*out)[..];
-    let orig_raw = orig_rgba.as_raw();
-    let up_raw = up_rgba.as_raw();
+
+    let sx_factor = orig_w as f32 / up_w as f32;
+    let sy_factor = orig_h as f32 / up_h as f32;
 
     out_raw.par_chunks_exact_mut((up_w * 4) as usize).enumerate().for_each(|(y, row)| {
-        for x in 0..up_w as usize {
-            let idx = (y * up_w as usize + x) * 4;
-            let o_r = orig_raw[idx] as f32;
-            let o_g = orig_raw[idx + 1] as f32;
-            let o_b = orig_raw[idx + 2] as f32;
+        let sy = ((y as f32 + 0.5) * sy_factor).clamp(0.0, (orig_h - 1) as f32) as usize;
+        let orig_row_offset = sy * (orig_w as usize) * 4;
 
-            let u_r = up_raw[idx] as f32;
-            let u_g = up_raw[idx + 1] as f32;
-            let u_b = up_raw[idx + 2] as f32;
+        for x in 0..up_w as usize {
+            let sx = ((x as f32 + 0.5) * sx_factor).clamp(0.0, (orig_w - 1) as f32) as usize;
+            let o_idx = orig_row_offset + sx * 4;
+            let o_r = orig_raw[o_idx] as f32;
+            let o_g = orig_raw[o_idx + 1] as f32;
+            let o_b = orig_raw[o_idx + 2] as f32;
+
+            let u_idx = (y * up_w as usize + x) * 4;
+            let u_r = up_raw[u_idx] as f32;
+            let u_g = up_raw[u_idx + 1] as f32;
+            let u_b = up_raw[u_idx + 2] as f32;
 
             // Luminanza (Y) preservata al 100% dall'output neurale
             let y_up = 0.299 * u_r + 0.587 * u_g + 0.114 * u_b;
@@ -307,14 +332,12 @@ pub fn chroma_color_fidelity_fusion(original: &DynamicImage, upscaled: &DynamicI
     DynamicImage::ImageRgba8(out)
 }
 
-/// Recupero adattivo della gamma dinamica e delle ombre (Shadow & Highlight lift):
-/// Fa emergere tessiture e dettagli nascosti nelle zone d'ombra senza bruciare i punti luce.
-pub fn adaptive_dynamic_range(img: &RgbaImage) -> RgbaImage {
+/// Recupero adattivo della gamma dinamica e delle ombre (Shadow & Highlight lift) in-place:
+pub fn adaptive_dynamic_range_mut(img: &mut RgbaImage) {
     let (w, _h) = img.dimensions();
-    let mut out = img.clone();
-    let out_raw = &mut (*out)[..];
+    let raw = &mut (**img)[..];
 
-    out_raw.par_chunks_exact_mut((w * 4) as usize).for_each(|row| {
+    raw.par_chunks_exact_mut((w * 4) as usize).for_each(|row| {
         for x in 0..w as usize {
             let idx = x * 4;
             let r = row[idx] as f32 / 255.0;
@@ -331,19 +354,20 @@ pub fn adaptive_dynamic_range(img: &RgbaImage) -> RgbaImage {
             }
         }
     });
+}
 
+pub fn adaptive_dynamic_range(img: &RgbaImage) -> RgbaImage {
+    let mut out = img.clone();
+    adaptive_dynamic_range_mut(&mut out);
     out
 }
 
-/// Sintesi di micro-texture organica fotografica (Anti-Plasticity Engine):
-/// Elimina l'effetto pelle di cera / plastica tipico delle reti neurali,
-/// sintetizzando una trama di grana finissima calibrata sui soli mezzitoni.
-pub fn organic_micro_texture(img: &RgbaImage, strength: f32) -> RgbaImage {
+/// Sintesi di micro-texture organica fotografica (Anti-Plasticity Engine) in-place:
+pub fn organic_micro_texture_mut(img: &mut RgbaImage, strength: f32) {
     let (w, _h) = img.dimensions();
-    let mut out = img.clone();
-    let out_raw = &mut (*out)[..];
+    let raw = &mut (**img)[..];
 
-    out_raw.par_chunks_exact_mut((w * 4) as usize).enumerate().for_each(|(y, row)| {
+    raw.par_chunks_exact_mut((w * 4) as usize).enumerate().for_each(|(y, row)| {
         for x in 0..w as usize {
             let idx = x * 4;
             let r = row[idx] as f32;
@@ -367,7 +391,11 @@ pub fn organic_micro_texture(img: &RgbaImage, strength: f32) -> RgbaImage {
             row[idx + 2] = (b + delta).clamp(0.0, 255.0).round() as u8;
         }
     });
+}
 
+pub fn organic_micro_texture(img: &RgbaImage, strength: f32) -> RgbaImage {
+    let mut out = img.clone();
+    organic_micro_texture_mut(&mut out, strength);
     out
 }
 
@@ -494,22 +522,49 @@ pub fn upscale_configured(
     enable_tta: bool,
 ) -> Result<DynamicImage, String> {
     let scale = if scale == 8 { 8 } else { 4 };
+
+    // Limite di sicurezza per prevenire overflow dimensionali e OOM di sistema:
+    // Se la risoluzione originale moltiplicata per la scala eccede 16.384 px (il limite
+    // hardware per texture GPU e rasterizzatori), limitiamo la scala.
+    let max_dim = img.width().max(img.height());
+    let scale = if max_dim.saturating_mul(scale) > 16384 {
+        if max_dim.saturating_mul(4) <= 16384 { 4 } else { 2 }
+    } else {
+        scale
+    };
+
     match model {
         RestorationModel::UltraEnhance => {
             // STADIO 1: Pre-Denoise bilaterale edge-preserving
             let pre = edge_preserving_denoise(&img.to_rgba8(), 1.5, 0.12);
             let pre_dyn = DynamicImage::ImageRgba8(pre);
 
-            // STADIO 2: Super-risoluzione neurale su GPU (o Lanczos3 su CPU)
+            // STADIO 2: Super-risoluzione neurale su GPU (o Lanczos3 su CPU) con fallback trasparente
             let upscaled = if !force_cpu && gpu.is_gpu_acceleration_available() {
                 if let Some(exe) = &gpu.engine_path {
-                    if scale == 8 {
-                        // Cascata Neurale 8× su GPU: passaggio 4× seguito da passaggio 2×
-                        let p1 = upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta)?;
-                        upscale_neural(exe, &p1, 2, "realesrgan-x4plus", enable_tta)?
+                    let neural_res = if scale == 8 {
+                        // Cascata: 4× neurale su GPU, poi passaggio 2×
+                        match upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta, 400) {
+                            Ok(p1) => {
+                                // Se p1 è compatto (<= 2048), tentiamo secondo passaggio GPU con fallback CAS.
+                                // Se p1 è già grande (> 2048), usiamo Lanczos3 + CAS 2× istantaneo e privo di rischi VRAM.
+                                if p1.width() <= 2048 && p1.height() <= 2048 {
+                                    upscale_neural(exe, &p1, 2, "realesrgan-x4plus", enable_tta, 256)
+                                        .or_else(|_| upscale_cas_lanczos(&p1, 2))
+                                } else {
+                                    upscale_cas_lanczos(&p1, 2)
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Passaggio 1 GPU fallito ({e}), fallback a Lanczos3 + CAS");
+                                upscale_cas_lanczos(&pre_dyn, scale)
+                            }
+                        }
                     } else {
-                        upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta)?
-                    }
+                        upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta, 400)
+                            .or_else(|_| upscale_cas_lanczos(&pre_dyn, scale))
+                    };
+                    neural_res.unwrap_or_else(|_| upscale_cas_lanczos(&pre_dyn, scale).unwrap_or_else(|_| pre_dyn.clone()))
                 } else {
                     upscale_cas_lanczos(&pre_dyn, scale)?
                 }
@@ -519,33 +574,45 @@ pub fn upscale_configured(
 
             // STADIO 3: Fedeltà cromatica assoluta (YCbCr / Wavelet Chroma Fusion)
             let color_matched = chroma_color_fidelity_fusion(img, &upscaled, 0.85);
+            let mut matched_rgba = color_matched.to_rgba8();
 
-            // STADIO 4: Recupero dinamico delle ombre e mezzitoni
-            let shadow_lifted = adaptive_dynamic_range(&color_matched.to_rgba8());
+            // STADIO 4: Recupero dinamico delle ombre e mezzitoni in-place
+            adaptive_dynamic_range_mut(&mut matched_rgba);
 
             // STADIO 5: Contrast-Adaptive Sharpening (AMD CAS) per micro-acutance senza aloni
-            let sharpened = contrast_adaptive_sharpening(&shadow_lifted, 0.35);
+            let mut sharpened = contrast_adaptive_sharpening(&matched_rgba, 0.35);
 
-            // STADIO 6: Micro-texture organica fotografica anti-plastica
-            let finalized = organic_micro_texture(&sharpened, 0.012);
+            // STADIO 6: Micro-texture organica fotografica anti-plastica in-place
+            organic_micro_texture_mut(&mut sharpened, 0.012);
 
-            Ok(DynamicImage::ImageRgba8(finalized))
+            Ok(DynamicImage::ImageRgba8(sharpened))
         }
         _ => {
             if !force_cpu && model != RestorationModel::FastCas {
                 if let Some(exe) = &gpu.engine_path {
                     if gpu.has_vulkan {
+                        let m_name = model.ncnn_model_name();
                         let res = if scale == 8 {
-                            let p1 = upscale_neural(exe, img, 4, model.ncnn_model_name(), enable_tta)?;
-                            upscale_neural(exe, &p1, 2, model.ncnn_model_name(), enable_tta)
-                        } else {
-                            upscale_neural(exe, img, 4, model.ncnn_model_name(), enable_tta)
-                        };
-                        match res {
-                            Ok(res) => return Ok(res),
-                            Err(e) => {
-                                eprintln!("Elaborazione GPU fallita ({e}), passaggio all'algoritmo CAS di riserva.");
+                            match upscale_neural(exe, img, 4, m_name, enable_tta, 400) {
+                                Ok(p1) => {
+                                    if p1.width() <= 2048 && p1.height() <= 2048 {
+                                        upscale_neural(exe, &p1, 2, m_name, enable_tta, 256)
+                                            .or_else(|_| upscale_cas_lanczos(&p1, 2))
+                                    } else {
+                                        upscale_cas_lanczos(&p1, 2)
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("GPU upscale fallita ({e}), passaggio all'algoritmo CAS di riserva.");
+                                    upscale_cas_lanczos(img, scale)
+                                }
                             }
+                        } else {
+                            upscale_neural(exe, img, 4, m_name, enable_tta, 400)
+                                .or_else(|_| upscale_cas_lanczos(img, scale))
+                        };
+                        if let Ok(res) = res {
+                            return Ok(res);
                         }
                     }
                 }
@@ -678,5 +745,18 @@ mod tests {
         assert!(res_8x.is_ok());
         let up_8x = res_8x.unwrap();
         assert_eq!(up_8x.dimensions(), (128, 128));
+    }
+
+    #[test]
+    fn test_max_dimension_guard() {
+        // Immagine 3000x3000: a 8x farebbe 24000x24000 (> 16384). Deve essere limitata in sicurezza a 4x (12000x12000).
+        let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(3000, 3000, image::Rgba([100, 100, 100, 255])));
+        let max_dim = img.width().max(img.height());
+        let scale = if max_dim.saturating_mul(8) > 16384 {
+            if max_dim.saturating_mul(4) <= 16384 { 4 } else { 2 }
+        } else {
+            8
+        };
+        assert_eq!(scale, 4);
     }
 }
