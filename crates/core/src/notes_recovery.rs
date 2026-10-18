@@ -218,17 +218,113 @@ pub enum CrackProgress {
 }
 
 pub fn generate_pin_candidates() -> Vec<String> {
-    let mut v = Vec::with_capacity(10000 + 20);
-    for i in 0..=9999 {
-        v.push(format!("{:04}", i));
+    generate_pin_candidates_len(4)
+}
+
+/// Genera pattern intelligenti e prioritari per PIN (ripetizioni, sequenze, coppie, tastierino, date di calendario).
+pub fn generate_pin_smart_candidates(digits: usize) -> Vec<String> {
+    let digits = digits.clamp(1, 10);
+    let mut v = Vec::new();
+
+    // 1. Cifre identiche ripetute (0000, 1111, 2222...)
+    for d in 0..=9 {
+        v.push(d.to_string().repeat(digits));
     }
-    for i in 0..=9 {
-        v.push(format!("{i}{i}{i}{i}{i}{i}"));
+
+    // 2. Sequenze lineari crescenti e decrescenti
+    let seq = "01234567890123456789";
+    for i in 0..10 {
+        if i + digits <= seq.len() {
+            v.push(seq[i..i + digits].to_string());
+        }
     }
-    for pin in ["123456", "654321", "123123", "112233", "121212", "012345", "135790", "246800"] {
-        v.push(pin.to_string());
+    let rev_seq = "98765432109876543210";
+    for i in 0..10 {
+        if i + digits <= rev_seq.len() {
+            v.push(rev_seq[i..i + digits].to_string());
+        }
     }
+
+    // 3. Pattern a coppie (121212, 696969, 101010...)
+    if digits % 2 == 0 {
+        for a in 0..=9 {
+            for b in 0..=9 {
+                let pair = format!("{a}{b}");
+                v.push(pair.repeat(digits / 2));
+            }
+        }
+    }
+
+    // 4. Pattern tastierino / blocchi da 4 cifre per PIN a 8 cifre
+    if digits == 8 {
+        for block in [
+            "1234", "4321", "2580", "0852", "1470", "3690", "1379", "9731", "1590", "3570",
+            "0000", "1111", "2222", "1980", "1990", "2000", "2010", "2020", "2024", "2025",
+        ] {
+            v.push(format!("{block}{block}"));
+        }
+
+        // Pattern e date lore/popolari (Ezio Auditore, Desmond Miles, Assassin's Creed lore)
+        for special in [
+            "24061459", "14590624", "06241459", // Nascita Ezio Auditore (24 Giugno 1459)
+            "13031987", "19870313", "03131987", // Nascita Desmond Miles (13 Marzo 1987)
+            "21122012", "20121221", "12212012", // 21 Dicembre 2012 (fine del mondo AC3)
+            "14591459", "11651165", "11911191", "14761476", "14591524",
+            "13112007", "20071113", "17112009", "20112009", "20091117", "20091120",
+            "16112010", "19112010", "20101116", "15112011", "20111115",
+            "30102012", "31102012", "20121030", "20121031", "29102013", "20131029",
+        ] {
+            v.push(special.to_string());
+        }
+    }
+
+    // 5. Date di calendario a 6 cifre (DDMMYY, YYMMDD, MMDDYY)
+    if digits == 6 {
+        for year in 0..=99 {
+            for month in 1..=12 {
+                for day in 1..=31 {
+                    v.push(format!("{day:02}{month:02}{year:02}"));
+                    v.push(format!("{year:02}{month:02}{day:02}"));
+                    v.push(format!("{month:02}{day:02}{year:02}"));
+                }
+            }
+        }
+    }
+
+    // 6. Date di calendario a 8 cifre (DDMMYYYY, YYYYMMDD, MMDDYYYY)
+    if digits == 8 {
+        for year in (1930..=2030).rev() {
+            for month in 1..=12 {
+                for day in 1..=31 {
+                    v.push(format!("{day:02}{month:02}{year:04}"));
+                    v.push(format!("{year:04}{month:02}{day:02}"));
+                    v.push(format!("{month:02}{day:02}{year:04}"));
+                }
+            }
+        }
+    }
+
+    // Deduplica mantenendo l'ordine di inserimento
+    let mut seen = std::collections::HashSet::new();
+    v.retain(|c| seen.insert(c.clone()));
     v
+}
+
+/// Genera candidati PIN per un numero specificato di cifre.
+/// Per digits <= 5 restituisce l'intero spazio delle combinazioni.
+/// Per digits > 5 restituisce i candidati intelligenti prioritari per evitare eccessivo uso di memoria.
+pub fn generate_pin_candidates_len(digits: usize) -> Vec<String> {
+    let digits = digits.clamp(1, 10);
+    if digits <= 5 {
+        let total = 10_usize.pow(digits as u32);
+        let mut v = Vec::with_capacity(total);
+        for i in 0..total {
+            v.push(format!("{:0width$}", i, width = digits));
+        }
+        v
+    } else {
+        generate_pin_smart_candidates(digits)
+    }
 }
 
 pub fn common_passwords() -> Vec<String> {
@@ -238,6 +334,87 @@ pub fn common_passwords() -> Vec<String> {
         "access", "secret", "mustang", "superman", "apple", "iloveyou", "admin", "welcome",
         "italia", "roma", "milan", "juventus", "napoli", "inter", "amore", "ciao", "sole",
     ].into_iter().map(String::from).collect()
+}
+
+/// Esegue una sessione di brute-force PIN a cifre arbitrarie con supporto a zero-alloc su lunghezze elevate.
+/// Fase 1: Verifica i pattern intelligenti e date prioritarie.
+/// Fase 2: Esegue lo streaming dell'intero intervallo numerico 0..10^digits senza allocare vettori in RAM.
+pub fn run_pin_crack_session(
+    salt: Vec<u8>,
+    iterations: u32,
+    verifier_or_wrapped: Vec<u8>,
+    digits: usize,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    sender: std::sync::mpsc::Sender<CrackProgress>,
+) {
+    let digits = digits.clamp(1, 10);
+    let smart_cands = generate_pin_smart_candidates(digits);
+    let total_range = 10_u64.pow(digits as u32);
+    let total = smart_cands.len() + total_range as usize;
+    let mut tried = 0;
+    let start_time = std::time::Instant::now();
+
+    // Fase 1: Pattern intelligenti prioritari (date, ripetizioni, sequenze)
+    let smart_batch_size = 500;
+    for chunk in smart_cands.chunks(smart_batch_size) {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = sender.send(CrackProgress::Cancelled);
+            return;
+        }
+
+        let found = chunk.par_iter().find_any(|cand| {
+            verify_candidate(cand, &salt, iterations, &verifier_or_wrapped).is_some()
+        });
+
+        if let Some(pwd) = found {
+            tried += chunk.iter().position(|c| c == pwd).unwrap_or(0) + 1;
+            let _ = sender.send(CrackProgress::Found {
+                password: pwd.clone(),
+                tried,
+            });
+            return;
+        }
+
+        tried += chunk.len();
+        let elapsed = start_time.elapsed().as_secs_f32().max(0.001);
+        let speed = tried as f32 / elapsed;
+        let _ = sender.send(CrackProgress::Running { tried, total, speed });
+    }
+
+    // Fase 2: Scansione numerica esaustiva 0..10^digits (streaming zero-allocation)
+    let batch_size: u64 = 1000;
+    let mut current: u64 = 0;
+
+    while current < total_range {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = sender.send(CrackProgress::Cancelled);
+            return;
+        }
+
+        let end = (current + batch_size).min(total_range);
+        let found = (current..end).into_par_iter().find_any(|&num| {
+            let cand = format!("{:0width$}", num, width = digits);
+            verify_candidate(&cand, &salt, iterations, &verifier_or_wrapped).is_some()
+        });
+
+        if let Some(num) = found {
+            let pwd = format!("{:0width$}", num, width = digits);
+            let _ = sender.send(CrackProgress::Found {
+                password: pwd,
+                tried: tried + (num - current + 1) as usize,
+            });
+            return;
+        }
+
+        tried += (end - current) as usize;
+        current = end;
+
+        let elapsed = start_time.elapsed().as_secs_f32().max(0.001);
+        let speed = tried as f32 / elapsed;
+        let _ = sender.send(CrackProgress::Running { tried, total, speed });
+    }
+
+    let _ = sender.send(CrackProgress::DoneNotFound { total: tried });
 }
 
 /// Esegue una sessione di recupero su thread di lavoro riportando il progresso a blocchi.
@@ -572,6 +749,92 @@ mod tests {
             assert!(!n.ciphertext.is_empty());
 
 
+        }
+    }
+
+    #[test]
+    fn test_pin_smart_candidates() {
+        let cands_8 = generate_pin_smart_candidates(8);
+        assert!(cands_8.contains(&"00000000".to_string()));
+        assert!(cands_8.contains(&"12345678".to_string()));
+        assert!(cands_8.contains(&"87654321".to_string()));
+        assert!(cands_8.contains(&"12121212".to_string()));
+        assert!(cands_8.contains(&"12341234".to_string()));
+        assert!(cands_8.contains(&"01012000".to_string())); // Data 01/01/2000
+        assert!(cands_8.len() > 10000);
+
+        let cands_4 = generate_pin_candidates_len(4);
+        assert_eq!(cands_4.len(), 10000);
+        assert_eq!(cands_4[0], "0000");
+        assert_eq!(cands_4[9999], "9999");
+    }
+
+    #[test]
+    fn test_run_pin_crack_session() {
+        let salt = hex("80771171105233481004850004085037");
+        let wrapped_key = hex("d04b17af7f6b184346aad3efefe8bec0987ee73418291a41");
+        // Hashcat vector usa password "hashcat" che non è un PIN, quindi per testare il flusso creiamo una cancellazione immediata
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let (tx, rx) = std::sync::mpsc::channel();
+        run_pin_crack_session(salt, 20000, wrapped_key, 4, cancel, tx);
+        match rx.recv().unwrap() {
+            CrackProgress::Cancelled => {}
+            _ => panic!("Expected cancelled"),
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_real_backup_8digit_pin() {
+        let db_path = r"F:\DumpIOSPing1\Backup\00008110-000A648136D0A01E\4f\4f98687d8ab0d6d1a371110e6b7300f6e465bef2";
+        if !std::path::Path::new(db_path).exists() { return; }
+        let conn = crate::open_db(std::path::Path::new(db_path)).unwrap();
+        let (verifier, _) = load_notes_crypto_context(&conn);
+        let v = verifier.unwrap();
+
+        let smart_cands = generate_pin_smart_candidates(8);
+        println!("Test 8-digit PIN su backup reale: {} candidati prioritari (date e pattern)", smart_cands.len());
+
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let salt = v.salt.clone();
+        let iters = v.iterations;
+        let verifier_data = v.verifier.clone();
+        let cancel_clone = cancel.clone();
+
+        std::thread::spawn(move || {
+            run_pin_crack_session(salt, iters, verifier_data, 8, cancel_clone, tx);
+        });
+
+        let mut last_report = std::time::Instant::now();
+        let smart_count = smart_cands.len();
+        while let Ok(msg) = rx.recv() {
+            match msg {
+                CrackProgress::Running { tried, total, speed } => {
+                    if last_report.elapsed().as_millis() >= 1500 || tried == smart_count {
+                        let pct = (tried as f32 / total as f32) * 100.0;
+                        println!("Progresso: {tried}/{total} ({pct:.2}%) - {speed:.0} pwd/sec");
+                        last_report = std::time::Instant::now();
+                    }
+                    // Testiamo l'intera serie di pattern smart + le prime 20.000 combinazioni numeriche
+                    if tried >= smart_count + 20_000 {
+                        println!("Fase smart completata (testati {} candidati intelligenti + 20.000 sequenziali). Interrompo il test rapido.", smart_count);
+                        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                CrackProgress::Found { password, tried } => {
+                    println!("🎉 PASSWORD TROVATA! '{}' dopo {} tentativi!", password, tried);
+                    return;
+                }
+                CrackProgress::DoneNotFound { total } => {
+                    println!("Finito: nessuna password trovata su {} tentativi.", total);
+                    return;
+                }
+                CrackProgress::Cancelled => {
+                    println!("Sessione di test terminata.");
+                    return;
+                }
+            }
         }
     }
 }

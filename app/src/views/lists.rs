@@ -51,6 +51,7 @@ pub struct State {
     note_crack_cancel: Option<Arc<AtomicBool>>,
     note_crack_status: Option<(usize, usize, f32)>,
     note_found_pwd: Option<String>,
+    note_pin_digits: usize,
     safari_tab: usize, // 0 = Cronologia, 1 = Preferiti
     voicemail_tab: usize, // 0 = Segreteria, 1 = Memo vocali
     reminder_filter: usize, // 0 = Tutti, 1 = Da fare, 2 = Completati
@@ -170,6 +171,42 @@ impl State {
                 iters,
                 verifier_data,
                 candidates,
+                cancel,
+                tx,
+            );
+        });
+    }
+
+    fn start_note_pin_crack(&mut self, backup: Arc<imancraft_core::Backup>, digits: usize) {
+        let Ok((verifier, _)) = backup.notes_crypto_context() else {
+            self.note_unlock_status = Some(Err("Impossibile caricare i parametri di cifratura delle Note.".into()));
+            return;
+        };
+        let Some(v) = verifier else {
+            self.note_unlock_status = Some(Err("Nessun verificatore crittografico trovato nel database NoteStore.sqlite.".into()));
+            return;
+        };
+
+        let digits = digits.clamp(1, 10);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = channel();
+        self.note_cracking = true;
+        self.note_crack_rx = Some(rx);
+        self.note_crack_cancel = Some(cancel.clone());
+        let total_estimate = 10_usize.pow(digits.min(9) as u32);
+        self.note_crack_status = Some((0, total_estimate, 0.0));
+        self.note_unlock_status = None;
+
+        let salt = v.salt;
+        let iters = v.iterations;
+        let verifier_data = v.verifier;
+
+        std::thread::spawn(move || {
+            imancraft_core::notes_recovery::run_pin_crack_session(
+                salt,
+                iters,
+                verifier_data,
+                digits,
                 cancel,
                 tx,
             );
@@ -374,8 +411,11 @@ impl State {
                     ui.add_space(4.0);
 
                     // Strumenti di recupero automatico / brute-force multi-core
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Recupero Password Multi-Core:").small().color(p.muted));
+                    if self.note_pin_digits == 0 {
+                        self.note_pin_digits = 4;
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("Recupero Multi-Core:").small().color(p.muted));
                         if ui.button("⚡ Attacco da Indizio").on_hover_text("Genera e verifica permutazioni intelligenti basate sull'indizio (maiuscole, accenti, suffissi, parole singole) e password comuni").clicked() && !self.note_cracking {
                             let hint = n.hint.as_deref().unwrap_or("");
                             let mut cands = imancraft_core::notes_recovery::generate_hint_candidates(hint);
@@ -383,11 +423,15 @@ impl State {
                             self.start_note_crack(env.backup.clone(), cands);
                         }
 
-                        if ui.button("🔢 Attacco PIN").on_hover_text("Verifica in parallelo tutti i 10.000 PIN a 4 cifre (0000-9999) e i PIN a 6 cifre più diffusi").clicked() && !self.note_cracking {
-                            let cands = imancraft_core::notes_recovery::generate_pin_candidates();
-                            self.start_note_crack(env.backup.clone(), cands);
+                        ui.separator();
+                        ui.label(RichText::new("Cifre PIN:").small().color(p.muted));
+                        ui.add(egui::DragValue::new(&mut self.note_pin_digits).range(3..=10).speed(0.1));
+                        let digits = self.note_pin_digits;
+                        if ui.button(format!("🔢 Attacco PIN ({digits} cifre)")).on_hover_text(format!("Brute-force parallelo multi-core per PIN a {digits} cifre (date e pattern intelligenti prioritari)")).clicked() && !self.note_cracking {
+                            self.start_note_pin_crack(env.backup.clone(), digits);
                         }
 
+                        ui.separator();
                         if ui.button("📂 Wordlist (.txt)…").on_hover_text("Carica un file dizionario personalizzato (.txt, .dict, .lst) per eseguire il brute-force").clicked() && !self.note_cracking {
                             if let Some(path) = rfd::FileDialog::new().add_filter("Wordlist", &["txt", "dict", "lst"]).pick_file() {
                                 if let Ok(content) = std::fs::read_to_string(&path) {
