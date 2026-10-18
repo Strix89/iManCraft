@@ -484,30 +484,37 @@ impl RestorationModel {
     }
 }
 
-/// Super-risoluzione configurata con selezione modello e fallback trasparente GPU -> CPU.
+/// Super-risoluzione configurata con selezione modello, fattore scala (4× o 8×) e fallback trasparente GPU -> CPU.
 pub fn upscale_configured(
     img: &DynamicImage,
     model: RestorationModel,
+    scale: u32,
     gpu: &GpuInfo,
     force_cpu: bool,
     enable_tta: bool,
 ) -> Result<DynamicImage, String> {
+    let scale = if scale == 8 { 8 } else { 4 };
     match model {
         RestorationModel::UltraEnhance => {
             // STADIO 1: Pre-Denoise bilaterale edge-preserving
             let pre = edge_preserving_denoise(&img.to_rgba8(), 1.5, 0.12);
             let pre_dyn = DynamicImage::ImageRgba8(pre);
 
-            // STADIO 2: Super-risoluzione neurale 4× su GPU (o Lanczos3 su CPU)
+            // STADIO 2: Super-risoluzione neurale su GPU (o Lanczos3 su CPU)
             let upscaled = if !force_cpu && gpu.is_gpu_acceleration_available() {
                 if let Some(exe) = &gpu.engine_path {
-                    upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta)
-                        .unwrap_or_else(|_| upscale_cas_lanczos(&pre_dyn, 4).unwrap())
+                    if scale == 8 {
+                        // Cascata Neurale 8× su GPU: passaggio 4× seguito da passaggio 2×
+                        let p1 = upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta)?;
+                        upscale_neural(exe, &p1, 2, "realesrgan-x4plus", enable_tta)?
+                    } else {
+                        upscale_neural(exe, &pre_dyn, 4, "realesrgan-x4plus", enable_tta)?
+                    }
                 } else {
-                    upscale_cas_lanczos(&pre_dyn, 4)?
+                    upscale_cas_lanczos(&pre_dyn, scale)?
                 }
             } else {
-                upscale_cas_lanczos(&pre_dyn, 4)?
+                upscale_cas_lanczos(&pre_dyn, scale)?
             };
 
             // STADIO 3: Fedeltà cromatica assoluta (YCbCr / Wavelet Chroma Fusion)
@@ -528,7 +535,13 @@ pub fn upscale_configured(
             if !force_cpu && model != RestorationModel::FastCas {
                 if let Some(exe) = &gpu.engine_path {
                     if gpu.has_vulkan {
-                        match upscale_neural(exe, img, 4, model.ncnn_model_name(), enable_tta) {
+                        let res = if scale == 8 {
+                            let p1 = upscale_neural(exe, img, 4, model.ncnn_model_name(), enable_tta)?;
+                            upscale_neural(exe, &p1, 2, model.ncnn_model_name(), enable_tta)
+                        } else {
+                            upscale_neural(exe, img, 4, model.ncnn_model_name(), enable_tta)
+                        };
+                        match res {
                             Ok(res) => return Ok(res),
                             Err(e) => {
                                 eprintln!("Elaborazione GPU fallita ({e}), passaggio all'algoritmo CAS di riserva.");
@@ -537,12 +550,12 @@ pub fn upscale_configured(
                     }
                 }
             }
-            upscale_cas_lanczos(img, 4)
+            upscale_cas_lanczos(img, scale)
         }
     }
 }
 
-/// Super-risoluzione unificata (esegue la pipeline UltraEnhance).
+/// Super-risoluzione unificata (esegue la pipeline UltraEnhance a 4×).
 pub fn upscale_image(
     img: &DynamicImage,
     gpu: &GpuInfo,
@@ -551,6 +564,7 @@ pub fn upscale_image(
     upscale_configured(
         img,
         RestorationModel::UltraEnhance,
+        4,
         gpu,
         !prefer_neural,
         false,
@@ -655,9 +669,14 @@ mod tests {
     #[test]
     fn test_ultra_enhance_pipeline_cpu() {
         let img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(16, 16, image::Rgba([120, 140, 160, 255])));
-        let res = upscale_configured(&img, RestorationModel::UltraEnhance, &GPU, true, false);
+        let res = upscale_configured(&img, RestorationModel::UltraEnhance, 4, &GPU, true, false);
         assert!(res.is_ok());
         let up = res.unwrap();
         assert_eq!(up.dimensions(), (64, 64));
+
+        let res_8x = upscale_configured(&img, RestorationModel::UltraEnhance, 8, &GPU, true, false);
+        assert!(res_8x.is_ok());
+        let up_8x = res_8x.unwrap();
+        assert_eq!(up_8x.dimensions(), (128, 128));
     }
 }

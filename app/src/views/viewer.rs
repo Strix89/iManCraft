@@ -49,6 +49,7 @@ pub struct Viewer {
     selected_model: upscaler::RestorationModel,
     force_cpu: bool,
     enable_tta: bool,
+    scale: u32,
 }
 
 impl Viewer {
@@ -68,6 +69,7 @@ impl Viewer {
             selected_model: upscaler::RestorationModel::UltraEnhance,
             force_cpu: false,
             enable_tta: false,
+            scale: 4,
         }
     }
 
@@ -170,7 +172,8 @@ impl Viewer {
                             let (_, _, uw, uh) = self.upscaled.as_ref().unwrap();
                             if ui.add_enabled(!busy, egui::Button::new("⬇ Salva 4× JPEG…")).clicked() {
                                 let base = it.name.rsplit_once('.').map_or(it.name.as_str(), |x| x.0);
-                                if let Some(dest) = save_dialog(&format!("{base}-AI-4x.jpg")) {
+                                let scale = self.scale;
+                                if let Some(dest) = save_dialog(&format!("{base}-AI-{scale}x.jpg")) {
                                     let backup = it.backup.clone();
                                     let src = match (&it.id, &it.thumb) {
                                         (Some(id), _) => Src::File { backup, id: id.clone(), name: it.name.clone() },
@@ -182,28 +185,28 @@ impl Viewer {
                                     let enable_tta = self.enable_tta;
                                     self.export = Some(tasks::run(ui.ctx(), "Salvataggio immagine migliorata", move || {
                                         let img = images::load_dynamic_image(&src)?;
-                                        let up = upscaler::upscale_configured(&img, model, &GPU, force_cpu, enable_tta)?;
+                                        let up = upscaler::upscale_configured(&img, model, scale, &GPU, force_cpu, enable_tta)?;
                                         let mut f = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
                                         up.write_to(&mut f, image::ImageFormat::Jpeg).map_err(|e| e.to_string())
                                     }));
                                 }
                             }
-                            if ui.selectable_label(self.show_upscaled, format!("✨ 4× AI ({}×{})", uw, uh)).clicked() {
+                            if ui.selectable_label(self.show_upscaled, format!("✨ {}× AI ({}×{})", self.scale, uw, uh)).clicked() {
                                 self.show_upscaled = true;
                             }
                             if ui.selectable_label(!self.show_upscaled, "Originale").clicked() {
                                 self.show_upscaled = false;
                             }
-                            if ui.add_enabled(!busy, egui::Button::new("⚙")).on_hover_text("Cambia modello di restauro AI").clicked() {
+                            if ui.add_enabled(!busy, egui::Button::new("⚙")).on_hover_text("Cambia impostazioni e scala di restauro AI").clicked() {
                                 self.show_ai_modal = true;
                             }
                         } else if !it.video || it.id.is_none() {
                             let label = if it.cloud || it.id.is_none() {
-                                "✨ Restaura Anteprima iCloud (AI 4×)…"
+                                "✨ Restaura Anteprima iCloud (AI)…"
                             } else if GPU.is_gpu_acceleration_available() {
-                                "✨ Migliora con AI (GPU 4×)…"
+                                "✨ Migliora con AI (GPU 4× / 8×)…"
                             } else {
-                                "✨ Migliora Risoluzione (4×)…"
+                                "✨ Migliora Risoluzione (4× / 8×)…"
                             };
                             if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
                                 self.show_ai_modal = true;
@@ -269,7 +272,7 @@ impl Viewer {
                         self.image(ui, &tex, stage);
                         let r = egui::Rect::from_min_size(stage.right_top() - Vec2::new(260.0, -10.0), Vec2::new(250.0, 24.0));
                         ui.put(r, |ui: &mut egui::Ui| {
-                            theme::chip(ui, &format!("✨ 4× SUPER-RES ATTIVA ({}×{})", w, h), p.accent)
+                            theme::chip(ui, &format!("✨ {}× SUPER-RES ATTIVA ({}×{})", self.scale, w, h), p.accent)
                         });
                         return;
                     }
@@ -334,7 +337,7 @@ impl Viewer {
             // Modal di configurazione e avvio restauro AI
             if self.show_ai_modal {
                 let modal_w = 560.0;
-                let modal_h = 560.0;
+                let modal_h = 630.0;
                 let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                 // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
@@ -348,17 +351,17 @@ impl Viewer {
                         theme::section_label(ui, p, "01 / RESTAURO & SUPER-RISOLUZIONE AI LOCALE");
                         ui.add_space(4.0);
                         let header_title = if it.cloud || it.id.is_none() {
-                            "✨ Restauro Anteprima iCloud (4×)"
+                            "✨ Restauro Anteprima iCloud (4× / 8×)"
                         } else {
-                            "✨ Super-Risoluzione AI Locale (4×)"
+                            "✨ Super-Risoluzione AI Locale (4× / 8×)"
                         };
                         ui.label(RichText::new(header_title).size(16.0).strong().color(p.text));
                         ui.add_space(4.0);
 
                         let subtitle = if it.cloud || it.id.is_none() {
-                            format!("L'originale è solo su iCloud: viene generata un'anteprima a quadrupla risoluzione per '{}'.", it.name)
+                            format!("L'originale è solo su iCloud: viene generata un'anteprima potenziata fino a 8× per '{}'.", it.name)
                         } else {
-                            format!("Incrementa la risoluzione di 4 volte ricostruendo dettagli e trame per '{}'.", it.name)
+                            format!("Incrementa la risoluzione di 4 o 8 volte ricostruendo dettagli e trame per '{}'.", it.name)
                         };
                         ui.label(RichText::new(subtitle).size(11.5).color(p.muted));
                         ui.add_space(8.0);
@@ -403,7 +406,7 @@ impl Viewer {
                                         ui.label(RichText::new("Accelerazione Hardware Attiva").strong().color(p.text));
                                     });
                                     ui.add_space(4.0);
-                                    ui.label(RichText::new("⚡ Vulkan 1.3 attivo: elaborazione neurale tensoriale locale (~1-3 secondi).").small().color(p.muted));
+                                    ui.label(RichText::new("⚡ Vulkan 1.3 attivo: elaborazione neurale tensoriale locale (~1-3 secondi a 4×, ~5-8 secondi a 8×).").small().color(p.muted));
                                 });
                         } else {
                             // Box Avviso CPU (Requisito esplicito di sicurezza e prestazioni)
@@ -470,21 +473,37 @@ impl Viewer {
                             });
                         }
 
+                        ui.add_space(8.0);
+                        theme::section_label(ui, p, "03 / FATTORE D'INGRANDIMENTO");
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.selectable_label(self.scale == 4, "4× (Alta Risoluzione)").clicked() {
+                                self.scale = 4;
+                            }
+                            if ui.selectable_label(self.scale == 8, "8× (Ultra Gigapixel)").clicked() {
+                                self.scale = 8;
+                            }
+                            if self.scale == 8 {
+                                ui.label(RichText::new("⚡ Cascata Neurale 8× su GPU (4× + 2×)").small().color(p.success));
+                            }
+                        });
+
                         ui.add_space(10.0);
                         // Pulsanti azione
                         ui.horizontal(|ui| {
+                            let scale = self.scale;
                             let action_label = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
-                                "⚠ Procedi comunque su CPU (Lento)"
+                                format!("⚠ Procedi comunque su CPU ({}× Lento)", scale)
                             } else if is_cpu_mode {
-                                "⚡ Avvia Restauro Rapido CAS"
+                                format!("⚡ Avvia Restauro Rapido CAS ({}×)", scale)
                             } else {
-                                "⚡ Avvia Restauro con GPU (4×)"
+                                format!("⚡ Avvia Restauro con GPU ({}×)", scale)
                             };
 
                             let start_clicked = if is_cpu_mode && self.selected_model != upscaler::RestorationModel::FastCas {
-                                ui.button(RichText::new(action_label).color(Color32::from_rgb(255, 200, 100))).clicked()
+                                ui.button(RichText::new(&action_label).color(Color32::from_rgb(255, 200, 100))).clicked()
                             } else {
-                                theme::primary(ui, p, action_label).clicked()
+                                theme::primary(ui, p, &action_label).clicked()
                             };
 
                             if start_clicked {
@@ -496,19 +515,20 @@ impl Viewer {
                                     _ => Src::Bytes(Arc::new([])),
                                 };
                                 let model = self.selected_model;
+                                let scale = self.scale;
                                 let force_cpu = self.force_cpu;
                                 let enable_tta = self.enable_tta;
                                 let task_label = if force_cpu || !GPU.is_gpu_acceleration_available() {
-                                    "Super-risoluzione CPU"
+                                    format!("Super-risoluzione CPU ({}×)", scale)
                                 } else if model == upscaler::RestorationModel::UltraEnhance {
-                                    "Pipeline SOTA Immagine Perfetta (GPU 4×)"
+                                    format!("Pipeline SOTA Immagine Perfetta (GPU {}×)", scale)
                                 } else {
-                                    "Super-risoluzione AI GPU"
+                                    format!("Super-risoluzione AI GPU ({}×)", scale)
                                 };
                                 self.upscaler_err = None;
                                 self.upscaling = Some(tasks::run(ui.ctx(), task_label, move || {
                                     let img = images::load_dynamic_image(&src)?;
-                                    upscaler::upscale_configured(&img, model, &GPU, force_cpu, enable_tta)
+                                    upscaler::upscale_configured(&img, model, scale, &GPU, force_cpu, enable_tta)
                                 }));
                             }
 
