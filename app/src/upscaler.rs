@@ -197,6 +197,201 @@ pub fn upscale_neural(
     image::load_from_memory(&bytes).map_err(|e| format!("Decodifica output neurale fallita: {e}"))
 }
 
+/// Esegue la pipeline SOTA di Super-Risoluzione Video 4× su GPU Vulkan con Contrast Adaptive Sharpening (CAS) e traccia audio.
+pub fn upscale_video_pipeline(
+    src_url: &str,
+    dest_path: &Path,
+    scale: u32,
+) -> Result<PathBuf, String> {
+    let engine = find_neural_engine().ok_or("Motore neurale Vulkan (realesrgan-ncnn-vulkan) non trovato")?;
+    let models_dir = engine.parent().map(|p| p.join("models")).unwrap_or_else(|| PathBuf::from("models"));
+
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(54321);
+    let temp_dir = std::env::temp_dir().join(format!("imancraft_video_sr_{nonce}"));
+    let in_dir = temp_dir.join("in");
+    let out_dir = temp_dir.join("out");
+    let audio_path = temp_dir.join("audio.aac");
+    let temp_out = temp_dir.join("final_upscaled.mp4");
+
+    std::fs::create_dir_all(&in_dir).map_err(|e| format!("Creazione cartella temporanea fallita: {e}"))?;
+    std::fs::create_dir_all(&out_dir).map_err(|e| format!("Creazione cartella temporanea fallita: {e}"))?;
+
+    // Struttura di pulizia automatica (RAII)
+    struct TempCleaner(PathBuf);
+    impl Drop for TempCleaner {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleaner = TempCleaner(temp_dir.clone());
+
+    // 1. Rileva FPS dal video sorgente
+    let probe = imancraft_core::media::probe(src_url).unwrap_or_default();
+    let fps_str = if probe.fps > 0.0 {
+        format!("{:.3}", probe.fps)
+    } else {
+        "30".to_string()
+    };
+
+    // 2. Estrazione fotogrammi a piena risoluzione
+    let mut extract_cmd = Command::new("ffmpeg");
+    extract_cmd.args([
+        "-y",
+        "-i",
+        src_url,
+        "-qscale:v",
+        "2",
+        in_dir.join("frame_%05d.jpg").to_str().unwrap_or(""),
+    ]);
+    #[cfg(windows)]
+    extract_cmd.creation_flags(0x08000000);
+
+    let extract_res = extract_cmd.output().map_err(|e| format!("Estrazione frame fallita: {e}"))?;
+    if !extract_res.status.success() {
+        let err = String::from_utf8_lossy(&extract_res.stderr);
+        return Err(format!("FFmpeg estrazione fotogrammi fallita: {err}"));
+    }
+
+    let frame_count = std::fs::read_dir(&in_dir).map(|rd| rd.count()).unwrap_or(0);
+    if frame_count == 0 {
+        return Err("Nessun fotogramma estratto dal video".to_string());
+    }
+
+    // 3. Estrazione audio (se presente)
+    let mut audio_cmd = Command::new("ffmpeg");
+    audio_cmd.args([
+        "-y",
+        "-i",
+        src_url,
+        "-vn",
+        "-c:a",
+        "copy",
+        audio_path.to_str().unwrap_or(""),
+    ]);
+    #[cfg(windows)]
+    audio_cmd.creation_flags(0x08000000);
+    let _ = audio_cmd.output();
+    let has_audio = audio_path.exists() && std::fs::metadata(&audio_path).map(|m| m.len() > 0).unwrap_or(false);
+
+    // 4. Esecuzione batch su GPU Vulkan (tiling a 256 per sicurezza VRAM)
+    let mut sr_cmd = Command::new(&engine);
+    sr_cmd.args([
+        "-i",
+        in_dir.to_str().unwrap_or(""),
+        "-o",
+        out_dir.to_str().unwrap_or(""),
+        "-n",
+        "realesrgan-x4plus",
+        "-s",
+        &scale.to_string(),
+        "-m",
+        models_dir.to_str().unwrap_or("models"),
+        "-t",
+        "256",
+        "-g",
+        "0",
+        "-f",
+        "jpg",
+    ]);
+    #[cfg(windows)]
+    sr_cmd.creation_flags(0x08000000);
+
+    let sr_res = sr_cmd.output().map_err(|e| format!("Esecuzione motore neurale fallita: {e}"))?;
+    if !sr_res.status.success() {
+        let err = String::from_utf8_lossy(&sr_res.stderr);
+        return Err(format!("Errore GPU Vulkan durante upscaling video: {err}"));
+    }
+
+    // 5. Re-muxing con filtro CAS e codifica hardware NVENC (con fallback software)
+    let mut remux_cmd = Command::new("ffmpeg");
+    remux_cmd.args([
+        "-y",
+        "-framerate",
+        &fps_str,
+        "-i",
+        out_dir.join("frame_%05d.jpg").to_str().unwrap_or(""),
+    ]);
+
+    if has_audio {
+        remux_cmd.args([
+            "-i",
+            audio_path.to_str().unwrap_or(""),
+            "-c:a",
+            "aac",
+            "-b:a",
+            "160k",
+        ]);
+    }
+
+    remux_cmd.args([
+        "-vf",
+        "cas=0.5",
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "p6",
+        "-cq",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        temp_out.to_str().unwrap_or(""),
+    ]);
+    #[cfg(windows)]
+    remux_cmd.creation_flags(0x08000000);
+
+    let remux_res = remux_cmd.output();
+    let nvenc_ok = remux_res.as_ref().map(|o| o.status.success() && temp_out.exists()).unwrap_or(false);
+
+    if !nvenc_ok {
+        let mut fallback_cmd = Command::new("ffmpeg");
+        fallback_cmd.args([
+            "-y",
+            "-framerate",
+            &fps_str,
+            "-i",
+            out_dir.join("frame_%05d.jpg").to_str().unwrap_or(""),
+        ]);
+        if has_audio {
+            fallback_cmd.args([
+                "-i",
+                audio_path.to_str().unwrap_or(""),
+                "-c:a",
+                "aac",
+                "-b:a",
+                "160k",
+            ]);
+        }
+        fallback_cmd.args([
+            "-vf",
+            "cas=0.5",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            temp_out.to_str().unwrap_or(""),
+        ]);
+        #[cfg(windows)]
+        fallback_cmd.creation_flags(0x08000000);
+        let fb_res = fallback_cmd.output().map_err(|e| format!("Re-muxing video fallito: {e}"))?;
+        if !fb_res.status.success() || !temp_out.exists() {
+            let err = String::from_utf8_lossy(&fb_res.stderr);
+            return Err(format!("Re-muxing FFmpeg fallito: {err}"));
+        }
+    }
+
+    // 6. Copia nel percorso di destinazione
+    std::fs::copy(&temp_out, dest_path).map_err(|e| format!("Salvataggio del video finale fallito: {e}"))?;
+
+    Ok(dest_path.to_path_buf())
+}
+
 /// Pre-filtro edge-preserving bilaterale multi-thread: elimina rumore di compressione JPEG
 /// e blocchi 8×8 prima della super-risoluzione, impedendo all'IA di allucinare dettagli spuri.
 pub fn edge_preserving_denoise(img: &RgbaImage, sigma_spatial: f32, sigma_range: f32) -> RgbaImage {

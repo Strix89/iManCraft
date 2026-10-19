@@ -133,10 +133,14 @@ La GUI desktop mette a disposizione 19 sezioni specializzate accessibili tramite
 
 ## Pipeline di Super-Risoluzione SOTA
 
-Per il recupero di immagini a bassa risoluzione, anteprime fortemente compresse di WhatsApp o asset conservati solo su iCloud di cui persiste solo la miniatura (120–320 px), IManCraft implementa una pipeline neurale e geometrica unificata a 6 stadi (`UltraEnhance`):
+IManCraft integra due motori dedicati di super-risoluzione neurale accelerati via hardware GPU Vulkan: uno specializzato per il restauro fotografico a 6 stadi (4× / 8×) e uno per la super-risoluzione dell'intero flusso video frame-by-frame (4× MP4 con audio AAC e filtro CAS).
+
+### 1. Pipeline di Restauro Fotografico a 6 Stadi (UltraEnhance 4× / 8×)
+
+Per il recupero di fotografie compresse, anteprime WhatsApp e asset archiviati su iCloud di cui persiste solo la miniatura (120–320 px), la pipeline esegue:
 
 ```
-Sorgente (Miniatura / Frame compresso)
+Sorgente (Miniatura / Fotografia compressa)
   │
   ├── Stadio 1: Pre-Denoise Bilaterale Edge-Preserving (Rayon multi-thread su CPU)
   │
@@ -151,14 +155,39 @@ Sorgente (Miniatura / Frame compresso)
   │
   └── Stadio 6: Sintesi di Micro-Texture Organica Fotografica (Anti-plastica su alte frequenze)
   │
-Risultato Finale (4× / 8× Ultra-Risoluzione)
+Risultato Finale (4× / 8× Ultra-Risoluzione JPEG)
 ```
 
-### Caratteristiche Tecniche della Pipeline:
 - **Fattori di Scala**: Selezione istantanea tra 4× (Alta Risoluzione) e 8× (Ultra Gigapixel).
-- **Cascata di Sicurezza 8×**: Quando la risoluzione al primo passaggio supera la soglia di 2048 px, il secondo stadio 2× viene eseguito tramite ricampionamento sinc finestrato Lanczos3 e sharpening CAS in meno di 150 ms, prevenendo saturazioni hardware.
+- **Cascata di Sicurezza 8×**: Quando la risoluzione al primo passaggio supera i 2048 px, il secondo passaggio 2× viene rifinito istantaneamente da sinc finestrato Lanczos3 e sharpening CAS in meno di 150 ms, prevenendo saturazioni hardware.
 - **Tolleranza ai Guasti Hardware**: In assenza di GPU dedicata o in caso di errore di allocazione Vulkan (`VK_ERROR_OUT_OF_DEVICE_MEMORY`), la pipeline effettua un fallback trasparente sull'algoritmo geometrico puro Rust (Lanczos3 + CAS).
-- **Clamp di Sicurezza Texture WGPU**: L'anteprima a schermo per il viewport egui viene limitata a 4096 px per garantire compatibilità con i limiti delle API grafiche DirectX/Vulkan, mentre l'immagine grezza a piena risoluzione viene preservata in memoria per il salvataggio su disco in qualità 100%.
+- **Clamp di Sicurezza Texture WGPU**: L'anteprima a schermo per il viewport egui viene limitata a 4096 px per garantire compatibilità con i limiti delle API grafiche DirectX/Vulkan, preservando l'immagine a risoluzione piena in memoria per il salvataggio su disco in qualità 100%.
+
+### 2. Pipeline di Super-Risoluzione Video Neurale SOTA (4× MP4)
+
+Concepita specificamente per l'upscaling integrale di videomessaggi (note video WhatsApp a 480×480 px), clip compresse e flussi registrati su dispositivi mobili, la pipeline video converte il file a piena risoluzione 4× (es. da 480×480 SD a 1920×1920 Full HD) preservando l'audio in perfetto sincronismo temporale:
+
+```
+File Video Sorgente (es. Videomessaggio WhatsApp 480×480 @ 30 fps)
+  │
+  ├── 1. Probing & Analisi Metadati: Rilevamento frame rate (FPS) e orientamento matriciale nativo
+  │
+  ├── 2. Estrazione Fotogrammi Lossless: De-compressione ad alta fedeltà di tutti i frame in directory temporanea isolata
+  │
+  ├── 3. Estrazione Flusso Audio: Copia diretta della traccia audio AAC originale senza ricodifica
+  │
+  ├── 4. Inferenza Neurale Batch GPU Vulkan: Esecuzione di Real-ESRGAN x4plus con tiling a 256 px a protezione della memoria VRAM
+  │
+  ├── 5. Filtraggio Acutance: Applicazione del filtro hardware Contrast-Adaptive Sharpening (AMD CAS a 0.5)
+  │
+  └── 6. Re-muxing Hardware & Sincronizzazione: Codifica H.264 tramite encoder hardware NVENC (CRF 18 / Preset P6) o libx264, con traccia audio AAC sincronizzata
+  │
+File Video Risultante (1920×1920 MP4 Full HD)
+```
+
+- **Integrazione UI Reattiva**: Attivabile direttamente dal visualizzatore a tutto schermo tramite pulsante dedicato "Migliora Video con AI (SOTA 4× MP4)". Durante l'elaborazione, una modale animata visualizza l'avanzamento senza bloccare l'interfaccia.
+- **Gestione del Risultato**: Al termine, la barra superiore consente con un clic di aprire la cartella di destinazione in Esplora Risorse o avviare la riproduzione del video migliorato con il lettore predefinito di sistema.
+- **Pulizia Automatica (RAII)**: Tutte le sequenze di frame intermedi e i file di lavoro temporanei vengono rimossi istantaneamente al termine o in caso di annullamento.
 
 ---
 

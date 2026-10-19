@@ -8,6 +8,7 @@ use crate::theme::{self, Palette};
 use crate::upscaler::{self, GPU};
 use egui::{Color32, Key, RichText, Stroke, Vec2};
 use imancraft_core::{media, Backup};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Un elemento sfogliabile nel visualizzatore.
@@ -48,6 +49,8 @@ pub struct Viewer {
     show_ai_modal: bool,
     force_cpu: bool,
     scale: u32,
+    video_upscaling: Option<Task<PathBuf>>,
+    video_upscaled_path: Option<PathBuf>,
 }
 
 impl Viewer {
@@ -66,6 +69,8 @@ impl Viewer {
             show_ai_modal: false,
             force_cpu: false,
             scale: 4,
+            video_upscaling: None,
+            video_upscaled_path: None,
         }
     }
 
@@ -78,6 +83,8 @@ impl Viewer {
             self.upscaling = None;
             self.show_upscaled = false;
             self.upscaler_err = None;
+            self.video_upscaling = None;
+            self.video_upscaled_path = None;
         }
     }
 
@@ -87,7 +94,7 @@ impl Viewer {
             return false;
         }
 
-        // Gestione completamento super-risoluzione AI
+        // Gestione completamento super-risoluzione AI (immagini)
         if let Some(task) = &self.upscaling {
             if let Some(res) = task.ready() {
                 match res {
@@ -115,10 +122,34 @@ impl Viewer {
             }
         }
 
+        // Gestione completamento super-risoluzione AI (video MP4)
+        if let Some(task) = &self.video_upscaling {
+            if let Some(res) = task.ready() {
+                match res {
+                    Ok(path) => {
+                        self.video_upscaled_path = Some(path.clone());
+                        self.upscaler_err = None;
+                    }
+                    Err(e) => {
+                        self.upscaler_err = Some(e.clone());
+                    }
+                }
+                self.video_upscaling = None;
+            }
+        }
+
         let (esc, left, right, space) = ctx.input(|i| (i.key_pressed(Key::Escape), i.key_pressed(Key::ArrowLeft), i.key_pressed(Key::ArrowRight), i.key_pressed(Key::Space)));
         if esc {
             if self.show_ai_modal {
                 self.show_ai_modal = false;
+                return true;
+            }
+            if self.video_upscaling.is_some() {
+                self.video_upscaling = None;
+                return true;
+            }
+            if self.upscaling.is_some() {
+                self.upscaling = None;
                 return true;
             }
             return false;
@@ -178,7 +209,7 @@ impl Viewer {
                         if ui.button("✕ Chiudi").clicked() {
                             open = false;
                         }
-                        let busy = self.export.as_ref().is_some_and(|t| t.ready().is_none()) || self.upscaling.is_some();
+                        let busy = self.export.as_ref().is_some_and(|t| t.ready().is_none()) || self.upscaling.is_some() || self.video_upscaling.is_some();
                         if busy {
                             ui.spinner();
                         }
@@ -208,7 +239,42 @@ impl Viewer {
                             if ui.add_enabled(!busy, egui::Button::new("⚙")).on_hover_text("Cambia impostazioni e scala di restauro AI").clicked() {
                                 self.show_ai_modal = true;
                             }
-                        } else if !it.video || it.id.is_none() {
+                        } else if it.video && it.id.is_some() {
+                            if let Some(path) = &self.video_upscaled_path {
+                                theme::chip(ui, "✓ VIDEO 4× SOTA SALVATO", p.success);
+                                let p_clone = path.clone();
+                                if ui.button("📁 Cartella").on_hover_text("Mostra il video migliorato in Esplora Risorse").clicked() {
+                                    #[cfg(windows)]
+                                    {
+                                        use std::os::windows::process::CommandExt;
+                                        let mut c = std::process::Command::new("explorer");
+                                        c.args(["/select,", p_clone.to_str().unwrap_or("")]);
+                                        c.creation_flags(0x08000000);
+                                        let _ = c.spawn();
+                                    }
+                                }
+                                let p_clone2 = path.clone();
+                                if ui.button("▶ Apri").on_hover_text("Riproduci il video 4× migliorato nel lettore di sistema").clicked() {
+                                    #[cfg(windows)]
+                                    {
+                                        use std::os::windows::process::CommandExt;
+                                        let mut c = std::process::Command::new("cmd");
+                                        c.args(["/c", "start", "", p_clone2.to_str().unwrap_or("")]);
+                                        c.creation_flags(0x08000000);
+                                        let _ = c.spawn();
+                                    }
+                                }
+                            } else {
+                                let label = if GPU.is_gpu_acceleration_available() {
+                                    "✨ Migliora Video con AI (SOTA 4× MP4)…"
+                                } else {
+                                    "✨ Migliora Video (4× MP4)…"
+                                };
+                                if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
+                                    self.show_ai_modal = true;
+                                }
+                            }
+                        } else {
                             let label = if it.cloud || it.id.is_none() {
                                 "✨ Restaura Anteprima iCloud (AI)…"
                             } else if GPU.is_gpu_acceleration_available() {
@@ -344,6 +410,98 @@ impl Viewer {
 
             // Modal di configurazione e avvio restauro AI
             if self.show_ai_modal {
+                if it.video && it.id.is_some() {
+                    // Modal dedicato alla super-risoluzione video SOTA 4×
+                    let modal_w = 560.0;
+                    let modal_h = 450.0;
+                    let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
+
+                    ui.interact(screen, ui.make_persistent_id("ai-video-modal-bg"), egui::Sense::click());
+                    ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(190));
+                    ui.painter().rect_filled(modal_rect, 6.0, p.panel);
+                    ui.painter().rect_stroke(modal_rect, 6.0, Stroke::new(1.5, p.accent), egui::StrokeKind::Outside);
+
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
+                        ui.vertical(|ui| {
+                            theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE NEURALE VIDEO SOTA");
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("✨ Super-Risoluzione Video 4× (MP4)").size(16.0).strong().color(p.text));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(format!("Pipeline neurale fotogramma per fotogramma con Real-ESRGAN Vulkan e ricodifica H.264 per '{}'.", it.name)).size(11.5).color(p.muted));
+                            ui.add_space(8.0);
+
+                            // Hardware & Accelerazione
+                            egui::Frame::new()
+                                .fill(p.panel_alt)
+                                .stroke(Stroke::new(1.0, p.line))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .inner_margin(egui::Margin::same(10))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        theme::chip(ui, "GPU ACCELERATA", p.success);
+                                        ui.label(RichText::new(format!("GPU: {}", GPU.name)).strong().color(p.text));
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new("⚡ Elaborazione su GPU Vulkan con Contrast-Adaptive Sharpening (CAS), ricodifica hardware NVENC e traccia audio AAC sincronizzata.").small().color(p.muted));
+                                });
+
+                            ui.add_space(8.0);
+                            theme::section_label(ui, p, "02 / SPECIFICHE TECNICHE E RISOLUZIONE TARGET");
+                            ui.add_space(4.0);
+
+                            let (src_w, src_h) = if let Some((_, player)) = &self.player {
+                                if player.probe.width > 0 && player.probe.height > 0 {
+                                    (player.probe.width as i64, player.probe.height as i64)
+                                } else {
+                                    (it.w, it.h)
+                                }
+                            } else {
+                                (it.w, it.h)
+                            };
+                            let tgt_w = if src_w > 0 { src_w * 4 } else { 1920 };
+                            let tgt_h = if src_h > 0 { src_h * 4 } else { 1920 };
+
+                            egui::Frame::new()
+                                .fill(p.panel_alt)
+                                .stroke(Stroke::new(1.0, p.line))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .inner_margin(egui::Margin::same(8))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new("Risoluzione sorgente:").small().color(p.muted));
+                                        ui.label(RichText::new(if src_w > 0 { format!("{}×{}", src_w, src_h) } else { "480×480 (SD)".to_string() }).strong().small().color(p.text));
+                                        ui.label(RichText::new("➔ Target 4×:").small().color(p.accent));
+                                        ui.label(RichText::new(format!("{}×{} (Full HD)", tgt_w, tgt_h)).strong().small().color(p.accent));
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new("• Algoritmo: Real-ESRGAN x4plus neurale su GPU Vulkan (tiling VRAM 256)").small().color(p.muted));
+                                    ui.label(RichText::new("• Nitidezza: Contrast-Adaptive Sharpening (AMD CAS a 0.5)").small().color(p.muted));
+                                    ui.label(RichText::new("• Audio: Estrazione e rimuxing sincronizzato senza perdita (AAC)").small().color(p.muted));
+                                    ui.label(RichText::new("• Formato output: MP4 H.264 (NVENC hardware / CRF 18 alta qualità)").small().color(p.muted));
+                                });
+
+                            ui.add_space(12.0);
+                            ui.horizontal(|ui| {
+                                let action_label = "⚡ Avvia Super-Risoluzione Video (4× MP4)…";
+                                if theme::primary(ui, p, action_label).clicked() {
+                                    let base = it.name.rsplit_once('.').map_or(it.name.as_str(), |x| x.0);
+                                    if let Some(dest) = save_dialog(&format!("{base}-AI-4x.mp4")) {
+                                        self.show_ai_modal = false;
+                                        self.upscaler_err = None;
+                                        let src_url = media::url(media::register(&it.backup), it.id.as_deref().unwrap());
+                                        self.video_upscaling = Some(tasks::run(ui.ctx(), "Super-risoluzione Video 4× SOTA", move || {
+                                            upscaler::upscale_video_pipeline(&src_url, &dest, 4)
+                                        }));
+                                    }
+                                }
+
+                                if ui.button("✕ Annulla").clicked() {
+                                    self.show_ai_modal = false;
+                                }
+                            });
+                        });
+                    });
+                } else {
                 let modal_w = 540.0;
                 let modal_h = 440.0;
                 let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
@@ -528,13 +686,16 @@ impl Viewer {
                         });
                     });
                 });
+                }
             }
 
-            // Dialog Modale ArtCraft durante l'elaborazione AI
-            if self.upscaling.is_some() {
+            // Dialog Modale ArtCraft durante l'elaborazione AI (video o immagine)
+            let is_video_busy = self.video_upscaling.is_some();
+            let is_image_busy = self.upscaling.is_some();
+            if is_video_busy || is_image_busy {
                 ctx.request_repaint(); // animazione fluida continua
-                let modal_w = 460.0;
-                let modal_h = 230.0;
+                let modal_w = 480.0;
+                let modal_h = 240.0;
                 let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                 ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(180));
@@ -543,54 +704,93 @@ impl Viewer {
 
                 ui.scope_builder(egui::UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
                     ui.vertical(|ui| {
-                        theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE AI");
-                        ui.add_space(4.0);
-                        ui.label(RichText::new(format!("✨ Ricostruzione SOTA Immagine Perfetta ({}×)", self.scale)).size(16.0).strong().color(p.text));
-                        ui.add_space(8.0);
+                        if is_video_busy {
+                            theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE NEURALE VIDEO SOTA");
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("✨ Super-Risoluzione Video 4× in Corso").size(16.0).strong().color(p.text));
+                            ui.add_space(8.0);
 
-                        let is_cpu = self.force_cpu || !GPU.is_gpu_acceleration_available();
-                        ui.horizontal_wrapped(|ui| {
-                            if is_cpu {
-                                theme::chip(ui, "HARDWARE: CPU", Color32::from_rgb(240, 160, 40));
-                                theme::chip(ui, "PIPELINE SOTA (6 STADI)", p.muted);
-                            } else {
+                            ui.horizontal_wrapped(|ui| {
                                 theme::chip(ui, &format!("GPU: {}", GPU.name), p.accent);
-                                theme::chip(ui, "PIPELINE SOTA (6 STADI)", p.on_accent);
-                            }
-                            theme::chip(ui, &format!("SCALA: {}×", self.scale), p.muted);
-                        });
-                        ui.add_space(14.0);
+                                theme::chip(ui, "REAL-ESRGAN VULKAN 4×", p.on_accent);
+                                theme::chip(ui, "CAS + NVENC H.264", p.muted);
+                            });
+                            ui.add_space(14.0);
 
-                        // Barra animata ArtCraft
-                        let (bar_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 8.0), egui::Sense::hover());
-                        ui.painter().rect_filled(bar_rect, 4.0, p.panel_alt);
+                            // Barra animata ArtCraft
+                            let (bar_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 8.0), egui::Sense::hover());
+                            ui.painter().rect_filled(bar_rect, 4.0, p.panel_alt);
 
-                        let time = ui.input(|i| i.time);
-                        let progress = ((time * 1.4).sin().abs() as f32).clamp(0.05, 0.95);
-                        let active_w = (bar_rect.width() * 0.4).max(60.0);
-                        let offset_x = (bar_rect.width() - active_w) * progress;
-                        let active_rect = egui::Rect::from_min_size(
-                            bar_rect.min + Vec2::new(offset_x, 0.0),
-                            Vec2::new(active_w, bar_rect.height()),
-                        );
-                        let bar_color = if is_cpu { Color32::from_rgb(240, 160, 40) } else { p.accent };
-                        ui.painter().rect_filled(active_rect, 4.0, bar_color);
+                            let time = ui.input(|i| i.time);
+                            let progress = ((time * 1.4).sin().abs() as f32).clamp(0.05, 0.95);
+                            let active_w = (bar_rect.width() * 0.4).max(60.0);
+                            let offset_x = (bar_rect.width() - active_w) * progress;
+                            let active_rect = egui::Rect::from_min_size(
+                                bar_rect.min + Vec2::new(offset_x, 0.0),
+                                Vec2::new(active_w, bar_rect.height()),
+                            );
+                            ui.painter().rect_filled(active_rect, 4.0, p.accent);
 
-                        ui.add_space(10.0);
-                        let msg = if is_cpu {
-                            "Elaborazione su processore CPU in corso (potrebbe richiedere tempo)…"
+                            ui.add_space(10.0);
+                            ui.label(RichText::new("Elaborazione neurale di tutti i fotogrammi del video su GPU Vulkan…").small().color(p.text));
+                            ui.label(RichText::new("Estrazione fotogrammi → Neurale Real-ESRGAN → AMD CAS → Muxing H.264 + Audio").small().color(p.muted));
+
+                            ui.add_space(10.0);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("✕ Annulla").clicked() {
+                                    self.video_upscaling = None;
+                                }
+                            });
                         } else {
-                            "Elaborazione tensoriale GPU in corso…"
-                        };
-                        ui.label(RichText::new(msg).small().color(p.text));
-                        ui.label(RichText::new("Ricostruzione micro-dettagli, trame e riduzione rumore").small().color(p.muted));
+                            theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE AI");
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(format!("✨ Ricostruzione SOTA Immagine Perfetta ({}×)", self.scale)).size(16.0).strong().color(p.text));
+                            ui.add_space(8.0);
 
-                        ui.add_space(10.0);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("✕ Annulla").clicked() {
-                                self.upscaling = None;
-                            }
-                        });
+                            let is_cpu = self.force_cpu || !GPU.is_gpu_acceleration_available();
+                            ui.horizontal_wrapped(|ui| {
+                                if is_cpu {
+                                    theme::chip(ui, "HARDWARE: CPU", Color32::from_rgb(240, 160, 40));
+                                    theme::chip(ui, "PIPELINE SOTA (6 STADI)", p.muted);
+                                } else {
+                                    theme::chip(ui, &format!("GPU: {}", GPU.name), p.accent);
+                                    theme::chip(ui, "PIPELINE SOTA (6 STADI)", p.on_accent);
+                                }
+                                theme::chip(ui, &format!("SCALA: {}×", self.scale), p.muted);
+                            });
+                            ui.add_space(14.0);
+
+                            // Barra animata ArtCraft
+                            let (bar_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 8.0), egui::Sense::hover());
+                            ui.painter().rect_filled(bar_rect, 4.0, p.panel_alt);
+
+                            let time = ui.input(|i| i.time);
+                            let progress = ((time * 1.4).sin().abs() as f32).clamp(0.05, 0.95);
+                            let active_w = (bar_rect.width() * 0.4).max(60.0);
+                            let offset_x = (bar_rect.width() - active_w) * progress;
+                            let active_rect = egui::Rect::from_min_size(
+                                bar_rect.min + Vec2::new(offset_x, 0.0),
+                                Vec2::new(active_w, bar_rect.height()),
+                            );
+                            let bar_color = if is_cpu { Color32::from_rgb(240, 160, 40) } else { p.accent };
+                            ui.painter().rect_filled(active_rect, 4.0, bar_color);
+
+                            ui.add_space(10.0);
+                            let msg = if is_cpu {
+                                "Elaborazione su processore CPU in corso (potrebbe richiedere tempo)…"
+                            } else {
+                                "Elaborazione tensoriale GPU in corso…"
+                            };
+                            ui.label(RichText::new(msg).small().color(p.text));
+                            ui.label(RichText::new("Ricostruzione micro-dettagli, trame e riduzione rumore").small().color(p.muted));
+
+                            ui.add_space(10.0);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("✕ Annulla").clicked() {
+                                    self.upscaling = None;
+                                }
+                            });
+                        }
                     });
                 });
             }
