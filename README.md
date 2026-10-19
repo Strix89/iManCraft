@@ -1,239 +1,302 @@
-# 📱 IManCraft
+# IManCraft
 
-<p align="center">
-  <strong>Client forense nativo per l'esplorazione, l'analisi e l'estrazione di backup iOS (iTunes / Finder / iMazing).</strong><br>
-  <em>100% Rust, zero browser, zero Electron. Interfaccia grafica nativa in stile ArtCraft (egui + wgpu) con Super-Risoluzione AI accelerata da GPU.</em>
-</p>
+Client desktop nativo ad alte prestazioni per l'analisi forense, l'esplorazione strutturata e l'estrazione di backup iOS (formato iTunes, Finder, Apple Devices e iMazing).
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Language-Rust%202021-orange.svg" alt="Rust">
-  <img src="https://img.shields.io/badge/Platform-Windows%20x64-blue.svg" alt="Windows x64">
-  <img src="https://img.shields.io/badge/GUI-egui%200.37%20%2B%20wgpu-purple.svg" alt="egui">
-  <img src="https://img.shields.io/badge/GPU-Vulkan%20Accelerated-green.svg" alt="Vulkan">
-  <img src="https://img.shields.io/badge/License-MIT-brightgreen.svg" alt="License">
-</p>
+Progettato interamente in Rust con interfaccia grafica vettoriale nativa basata su egui e backend di rendering wgpu, IManCraft elimina qualsiasi dipendenza da runtime web o framework Electron. Integra un motore proprietario di decifratura crittografica operante esclusivamente in memoria volatile e una pipeline di super-risoluzione e restauro visivo SOTA accelerata via compute shader GPU Vulkan.
+
+[![Language](https://img.shields.io/badge/Language-Rust%202021-orange.svg)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20x64%20(GNU)-blue.svg)](https://www.microsoft.com/windows)
+[![GUI Framework](https://img.shields.io/badge/GUI-egui%200.37%20%2F%20wgpu-purple.svg)](https://github.com/emilk/egui)
+[![Acceleration](https://img.shields.io/badge/Compute-Vulkan%201.3%20%2F%20Rayon-green.svg)](https://www.khronos.org/vulkan/)
+[![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 
 ---
 
-## 🌟 Panoramica
+## Indice dei Contenuti
 
-**IManCraft** è un'applicazione desktop Windows per l'esplorazione forense approfondita e l'estrazione dati dai backup di iPhone e iPad, siano essi standard o cifrati con password. 
-
-Ispirato al linguaggio visivo della suite **ArtCraft** (antracite denso, accenti configurabili, chip monospazio ad alta densità informativa), IManCraft opera in modalità **completamente offline e in sola lettura**, garantendo l'integrità assoluta dei backup originali. La decifratura dei backup protetti avviene **esclusivamente in memoria RAM** tramite derivazione crittografica RFC 3394 / PBKDF2 / AES-CBC, senza mai scrivere dati in chiaro su disco.
-
----
-
-## ⚡ Caratteristiche Principali
-
-### 🔍 Esplorazione Forense Completa (19 Sezioni)
-- **Discover Screen**: Hero Card con dettagli tecnici estesi (UDID, versione iOS, stato cifratura, bitmask DDNA), **barra di memoria segmentata** per quote disco (Foto, Video, App, Audio, Dati) e **griglia di Quick Actions** per la navigazione rapida.
-- **WhatsApp Forensics**: Ricostruzione conversazioni a bolle con allegati, citazioni e messaggi di sistema. **Ricerca avanzata per intervallo di date e ore** con scorciatoie rapide. Galleria multimediale separata, registro chiamate ed esportazione chat in formato **TXT, CSV, XLSX (Excel)** e **HTML5 responsivo con impaginazione PDF/Stampa**.
-- **Telegram iOS Forensics**: Rilevamento istanze app e App Group (`group.ph.telegra.Telegraph`), parsing delle preferenze plist (`CFAbsoluteTime` / Unix startup time, flag di indicizzazione e preset video). Analisi dei database Postbox (`db_sqlite`) e legacy (`tgdata.sqlite`), con gestione e spiegazione dettagliata dell'esclusione cloud (`NSURLIsExcludedFromBackupKey`).
-- **Messaggi (iMessage / SMS)**: Visualizzazione chat con allegati multimediali, visualizzatore nativo ed esportazione sia in formato **Excel (XLSX)** che **HTML per stampa/salvataggio PDF**.
-- **Libreria Foto & Video**: Esplorazione dell'intera libreria `Photos.sqlite`, inclusi gli elementi rimasti **solo su iCloud** (con recupero dell'anteprima e badge indicativo ☁), album, filtri dinamici, player video nativo frame-by-frame e **funzione di esportazione massiva (Bulk Export)**.
-- **Contatti, Note, Calendari & Promemoria**:
-  - Contatti con esportazione **vCard 3.0 (.vcf standard)** ed Excel.
-  - Note con decodifica dei messaggi Protobuf per recuperare testo formattato completo e cartelle.
-  - Calendari con esportazione **iCalendar (.ics standard RFC 5545)**.
-  - Promemoria completi (iOS 13+ `Stores/Data-*.sqlite` e legacy) con priorità, scadenze e stato completamento.
-- **Registro Chiamate, Segreteria & Memo Vocali**: Registro completo delle chiamate con durata e stato; ascolto e salvataggio diretto dei file audio nativi della segreteria (`.amr`) e dei memo vocali (`.m4a`).
-- **Safari**: Navigazione cronologia e gestione completa dei **Preferiti ed Elenco di Lettura** con esportazione HTML standard Netscape Bookmarks.
-- **Rilevamento Spyware IOC (Pegasus / Predator)**: Scanner offline per la ricerca di Indicatori di Compromissione (IOC) di spyware di sorveglianza mirata (Pegasus di NSO Group, Predator di Cytrox, C2 domains) su SMS, WhatsApp e cronologia web.
-- **DDNA & Snapshot Incrementali Versions.db**: Parsing della bitmask a 32 bit `dataSets` di iMazing, navigazione visiva della timeline degli snapshot incrementali con calcolo differenze tra versioni.
-- **Container App `.imazingapp`**: Ispezione ed esportazione dei container delle applicazioni in archivi standard `.imazingapp` (con `Container/`, `iTunesMetadata.plist` e icone).
-- **Backup Extractor (Export All Data)**: Motore di estrazione guidata per salvare l'intero backup organizzato automaticamente in cartelle sul computer.
+- [Principi di Progettazione Forense](#principi-di-progettazione-forense)
+- [Architettura del Sistema](#architettura-del-sistema)
+- [Moduli di Analisi Forense](#moduli-di-analisi-forense)
+- [Pipeline di Super-Risoluzione SOTA](#pipeline-di-super-risoluzione-sota)
+- [Modulo Crittografico e Recupero Note Protette](#modulo-crittografico-e-recupero-note-protette)
+- [Interfaccia a Riga di Comando (CLI)](#interfaccia-a-riga-di-comando-cli)
+- [Requisiti di Sistema](#requisiti-di-sistema)
+- [Compilazione dai Sorgenti](#compilazione-dai-sorgenti)
+- [Scorciatoie da Tastiera](#scorciatoie-da-tastiera)
+- [Struttura del Repository](#struttura-del-repository)
+- [Licenza e Disclaimer Legale](#licenza-e-disclaimer-legale)
 
 ---
 
-### ✨ Super-Risoluzione AI con Accelerazione GPU
-IManCraft integra un modulo di miglioramento e ingrandimento 4× per foto, anteprime compresse e frame video:
-- **Accelerazione Hardware GPU (Vulkan)**: Esecuzione di modelli neurali profondi (**Real-ESRGAN Vulkan**) direttamente sui compute shader della scheda video (NVIDIA GeForce, AMD Radeon, Intel) in circa 2 secondi.
-- **Algoritmo Puro Rust (Lanczos3 + Contrast Adaptive Sharpening CAS)**: Fallback matematico con ricampionamento sinc finestrato e filtro dinamico CAS per recuperare nitidezza e micro-dettagli senza aloni o artefatti di ringing.
-- **Interfaccia Craft**: Dialogo modale con indicazione GPU, barra animata pulsante, switcher istantaneo `[✨ 4× AI | Originale]` e salvataggio diretto in alta risoluzione.
+## Principi di Progettazione Forense
+
+IManCraft è concepito per soddisfare i requisiti di integrità e non-ripudiabilità tipici dell'acquisizione e analisi forense digitale:
+
+- **Garanzia di sola lettura (Read-Only)**: L'applicazione apre tutti i file di sistema, i database SQLite (`Manifest.db`, cataloghi applicativi) e gli archivi di dump impostando il flag SQLite `immutable=1` e descrittori di file in sola lettura. Nessun byte del backup originale viene mai modificato, sovrascritto o rilocato.
+- **Zero-Disk Footprint per Backup Cifrati**: La decifratura dei backup protetti da password avviene senza creare file temporanei decifrati su disco. Le chiavi crittografiche (KeyBag) derivate via PBKDF2-HMAC-SHA1/SHA256 e srotolate tramite RFC 3394 risiedono esclusivamente nella memoria volatile dell'eseguibile protetto.
+- **Micro-Server Loopback Dedicato per Media Cifrati**: Per consentire a decoder binari esterni (come FFmpeg) di eseguire seek dinamico e riproduzione su flussi multimediali memorizzati all'interno di backup cifrati, il core istanzia un server HTTP interno bound a `127.0.0.1` su porta effimera, protetto da token di autenticazione monouso a 256 bit e decifratura AES-CBC al volo per singolo chunk HTTP `Range`.
 
 ---
 
-### 💻 Strumento da Riga di Comando (`imancraft-cli`)
-Oltre alla GUI nativa, il progetto include l'eseguibile headless `imancraft-cli`:
-```bash
-# Scansione dei backup sul computer
-imancraft-cli list
+## Architettura del Sistema
 
-# Informazioni dettagliate su un backup (anche con password)
-imancraft-cli info "C:\Percorso\Al\Backup" --password "mia_password"
+Il progetto è strutturato come workspace Cargo multi-crate ad alta coesione e basso accoppiamento:
 
-# Ricerca globale su tutti i database
-imancraft-cli search "C:\Percorso\Al\Backup" "parola_chiave"
-
-# Scansione IOC spyware (Pegasus / Predator)
-imancraft-cli spyware-scan "C:\Percorso\Al\Backup"
-
-# Estrazione completa in cartelle (Backup Extractor)
-imancraft-cli extract "C:\Percorso\Al\Backup" -o "C:\Destinazione"
+```
+iManCraft Workspace
+├── crates/core (imancraft-core)
+│   ├── Analisi e parsing SQLite / bplist / Protobuf
+│   ├── Motore crittografico (KeyBag, RFC 3394, AES-GCM, PBKDF2)
+│   ├── Parser MP4/MOV per metadati e rotazione matriciale
+│   ├── Motore di scansione IOC per indicatori spyware
+│   └── Esportatori conformi (XLSX, vCard 3.0, RFC 5545 iCalendar, HTML5)
+├── app (imancraft)
+│   ├── Shell desktop nativa (eframe, egui 0.37, wgpu)
+│   ├── Cache asincrona texture LIFO per miniature ad alto throughput
+│   ├── Pipeline neurale e geometrica UltraEnhance (4x / 8x)
+│   └── Riproduttore nativo audio/video sincronizzato (rodio + ffmpeg pipe)
+└── cli (imancraft-cli)
+    └── Strumento a riga di comando per scripting, audit batch e CI/CD
 ```
 
 ---
 
-## 📋 Prerequisiti
+## Moduli di Analisi Forense
 
-| Componente | Requisito | A cosa serve |
+La GUI desktop mette a disposizione 19 sezioni specializzate accessibili tramite navigation rail laterale:
+
+### 1. Discover (Panoramica del Dispositivo)
+- Scheda riassuntiva del dispositivo: modello commerciale, identificativo univoco hardware (UDID), versione di iOS, data del backup e stato di crittografia.
+- Barra segmentata delle quote di memoria: calcolo dinamico dell'occupazione per categorie logiche (Fotografie, Video, Applicazioni, Tracce Audio, File di Sistema).
+- Matrice di Quick Actions per l'accesso istantaneo ai flussi di lavoro più frequenti.
+
+### 2. Dispositivi e Snapshot Versions.db
+- Rilevamento automatico dei backup presenti nelle cartelle di sistema e supporto per directory arbitrarie (unità esterne, storage di rete).
+- Decodifica della bitmask a 32 bit `dataSets` dello standard DDNA (iMazing Backup Engine).
+- Ispezione cronologica degli snapshot incrementali memorizzati in `Versions.db`: visualizzazione della timeline e calcolo differenziale dei file aggiunti, modificati o eliminati tra punti di ripristino distinti.
+
+### 3. Ricerca Globale Unificata
+- Motore di indicizzazione e scansione full-text simultanea su tutti i database estratti: Contatti, Note, Calendari, Promemoria, Messaggi SMS/iMessage e conversazioni WhatsApp.
+
+### 4. WhatsApp Forensics
+- Ricostruzione cronologica delle conversazioni a bolle responsive, messaggi citati, eventi di sistema e allegati.
+- Ispezione multimediale avanzata per flussi video con estrazione istantanea delle dimensioni geometriche e dell'orientamento matriciale tramite parser nativo degli atomi MP4/MOV (`moov`/`trak`/`tkhd`).
+- Calcolo automatico della classe di risoluzione (4K, Full HD, HD, SD, qHD) visualizzata tramite chip informativi e badge sulle miniature.
+- Riproduzione integrata di memo vocali (.opus / .m4a) con controllo di seek e durata.
+- Galleria multimediale separata per visualizzare foto, video, documenti e link aggregati per singola chat.
+- Filtro temporale granulare per data e ora esatta con scorciatoie rapide.
+- Esportazione forense nei formati: TXT, CSV, Microsoft Excel (XLSX) con stili nativi e HTML5 responsive ottimizzato per la stampa o l'archiviazione PDF.
+
+### 5. Telegram iOS Forensics
+- Rilevamento del container dell'applicazione (`ph.telegra.Telegraph`) e dell'App Group condiviso (`group.ph.telegra.Telegraph`).
+- Parsing forense delle preferenze memorizzate nei file Property List binari (`CKStartupTime`, `TelegramCacheIndexTimestamp`, configurazioni video e grouping).
+- Analisi dei database Postbox (`db_sqlite`) e storage legacy (`tgdata.sqlite`).
+- Gestione trasparente ed esplicitazione forense delle politiche di esclusione cloud Apple (`NSURLIsExcludedFromBackupKey`).
+
+### 6. Messaggi (iMessage / SMS)
+- Parsing completo del database `sms.db`: conversazioni singole e di gruppo, notifiche di lettura, allegati multimediali e transcodifica miniature.
+- Esportazione nei formati Microsoft Excel (XLSX) e documento HTML5 stampabile in scala 1:1.
+
+### 7. Libreria Fotografica e Video
+- Esplorazione relazionale di `Photos.sqlite`: album utente, cartelle condivise, elementi preferiti e cestino.
+- Gestione degli asset conservati esclusivamente su iCloud: identificazione automatica delle voci prive di master locale, estrazione della miniatura presente nel backup e applicazione di badge distintivo.
+- Visualizzatore nativo a schermo intero con zoom centrico vettoriale, pan fluido e navigazione sequenziale.
+- Modulo di esportazione massiva (Bulk Export) con filtraggio preliminare per data, tipologia di file o album.
+
+### 8. Gestione Informazioni Personali (PIM)
+- **Contatti (`AddressBook.sqlitedb`)**: visualizzazione anagrafica dettagliata ed esportazione conforme in vCard 3.0 (.vcf) e Microsoft Excel (.xlsx).
+- **Note (`NoteStore.sqlite`)**: estrazione della gerarchia delle cartelle, snippet e decodifica dei messaggi Protobuf per il recupero di testo formattato completo e tabelle integrate.
+- **Calendari (`Calendar.sqlitedb`)**: estrazione eventi, scadenze, partecipanti ed esportazione standard RFC 5545 iCalendar (.ics).
+- **Promemoria**: supporto duale sia per lo schema moderno iOS 13+ (`Stores/Data-*.sqlite`) che per lo schema legacy integrato in CalendarItem.
+
+### 9. Telecomunicazioni e Audio
+- **Registro Chiamate (`CallHistory.storedata`)**: cronologia dettagliata con differenziazione chiamate in entrata, perse, effettuate, durata in secondi e supporto per chiamate VoIP (FaceTime, WhatsApp).
+- **Segreteria Telefonica (`voicemail.db`)**: correlazione metadati con flussi audio AMR ed esportazione diretta.
+- **Memo Vocali (`CloudRecordings.db`)**: metadati delle registrazioni e salvataggio dei file master AAC/M4A.
+
+### 10. Navigazione Web (Safari)
+- Analisi cronologica delle visite (`History.db`) con conteggio accessi e date secondo lo standard Cocoa Core Data (secondi da 2001-01-01).
+- Ispezione di Preferiti ed Elenco di Lettura (`Bookmarks.db`) con esportazione in formato Netscape Bookmarks HTML compatibile con qualsiasi browser desktop.
+
+### 11. Scanner di Indicatori di Compromissione Spyware (IOC)
+- Modulo di audit per la rilevazione di sorveglianza mirata (Pegasus di NSO Group, Predator di Cytrox e domini di Command & Control noti).
+- Scansione offline incrociata su SMS, chat WhatsApp e cronologia web Safari senza necessità di connessione di rete esterna.
+
+### 12. Gestione Container Applicativi (.imazingapp)
+- Ispezione dei metadati `Info.plist`, `iTunesMetadata.plist` e icone delle app installate.
+- Generazione ed esportazione di archivi standard `.imazingapp` conformi alla specifica ZIP con preservazione dell'albero `Container/`.
+
+### 13. Backup Extractor (Estrazione di Massa)
+- Motore automatico di deserializzazione e salvataggio dell'intero contenuto del backup in cartelle strutturate sul file system host (Contatti, Messaggi, Note, Media, Calendari, Safari).
+
+---
+
+## Pipeline di Super-Risoluzione SOTA
+
+Per il recupero di immagini a bassa risoluzione, anteprime fortemente compresse di WhatsApp o asset conservati solo su iCloud di cui persiste solo la miniatura (120–320 px), IManCraft implementa una pipeline neurale e geometrica unificata a 6 stadi (`UltraEnhance`):
+
+```
+Sorgente (Miniatura / Frame compresso)
+  │
+  ├── Stadio 1: Pre-Denoise Bilaterale Edge-Preserving (Rayon multi-thread su CPU)
+  │
+  ├── Stadio 2: Super-Risoluzione Neurale Vulkan (Real-ESRGAN x4plus via GPU Compute Shaders)
+  │             [Tiling automatico a blocchi da 256/400 px per prevenire VRAM OOM]
+  │
+  ├── Stadio 3: Fusione Cromatica YCbCr / Wavelet (Luminanza AI ad alta frequenza + crominanza fedele)
+  │
+  ├── Stadio 4: Recupero Dinamico dei Mezzitoni e Ombre (Compensazione curve di contrasto)
+  │
+  ├── Stadio 5: Contrast-Adaptive Sharpening (AMD CAS parallelo senza ringing o artefatti)
+  │
+  └── Stadio 6: Sintesi di Micro-Texture Organica Fotografica (Anti-plastica su alte frequenze)
+  │
+Risultato Finale (4× / 8× Ultra-Risoluzione)
+```
+
+### Caratteristiche Tecniche della Pipeline:
+- **Fattori di Scala**: Selezione istantanea tra 4× (Alta Risoluzione) e 8× (Ultra Gigapixel).
+- **Cascata di Sicurezza 8×**: Quando la risoluzione al primo passaggio supera la soglia di 2048 px, il secondo stadio 2× viene eseguito tramite ricampionamento sinc finestrato Lanczos3 e sharpening CAS in meno di 150 ms, prevenendo saturazioni hardware.
+- **Tolleranza ai Guasti Hardware**: In assenza di GPU dedicata o in caso di errore di allocazione Vulkan (`VK_ERROR_OUT_OF_DEVICE_MEMORY`), la pipeline effettua un fallback trasparente sull'algoritmo geometrico puro Rust (Lanczos3 + CAS).
+- **Clamp di Sicurezza Texture WGPU**: L'anteprima a schermo per il viewport egui viene limitata a 4096 px per garantire compatibilità con i limiti delle API grafiche DirectX/Vulkan, mentre l'immagine grezza a piena risoluzione viene preservata in memoria per il salvataggio su disco in qualità 100%.
+
+---
+
+## Modulo Crittografico e Recupero Note Protette
+
+IManCraft include un motore crittografico puro Rust multi-thread dedicato alla verifica di sicurezza e al recupero credenziali per le note protette memorizzate in `NoteStore.sqlite`:
+
+- **Estrazione Robusta dei Parametri Crittografici**: Parser binario resilient a byte grezzi per l'estrazione di `CryptoSalt`, `CryptoIterationCount`, `CryptoVerifier` e `wrappedEncryptionKey`, immune a fallimenti di deserializzazione dei bplist complessi.
+- **Verifica Immediata RFC 3394**: Derivazione chiavi via PBKDF2-HMAC-SHA256 (20.000 iterazioni conformi alle specifiche Apple) e verifica istantanea tramite l'integrità del vettore `0xA6A6A6A6A6A6A6A6` definito dallo standard RFC 3394 (zero falsi positivi matematici).
+- **Modalità di Attacco Parallelo su CPU (Rayon)**:
+  - *Attacco basato su Indizio (Hint-based)*: Generazione automatica di permutazioni (capitalizzazioni alternate, trasformazioni leet-speak, suffissi numerici e temporali).
+  - *Attacco PIN*: Verifica esaustiva delle combinazioni numeriche a 4 e 6 cifre.
+  - *Attacco Wordlist*: Ingestione di dizionari esterni (.txt) con throughput multi-core ad alta densità.
+- **Decrittazione AES-GCM e Decompressione**: Decifratura del payload a 128 o 256 bit, decompressione del flusso zlib/gzip ed estrazione dei tag Protobuf per visualizzare il testo originario.
+- **Sblocco a Cascata**: La derivazione della chiave di un account sblocca contestualmente tutte le note cifrate appartenenti al medesimo profilo nel backup.
+
+---
+
+## Interfaccia a Riga di Comando (CLI)
+
+Il binario headless `imancraft-cli` consente l'integrazione di IManCraft all'interno di pipeline automatizzate, ambienti headless e procedure di triage rapido:
+
+```bash
+# 1. Rilevamento automatico di tutti i backup presenti sull'host
+imancraft-cli list
+
+# 2. Ispezione dettagliata dei metadati (inclusi backup protetti da password)
+imancraft-cli info "C:\Backups\iPhone_00008110-000A648136D0A01E" --password "segreta123"
+
+# 3. Ricerca full-text su tutte le sorgenti di dati
+imancraft-cli search "C:\Backups\iPhone_00008110-000A648136D0A01E" "coordinate_bancarie"
+
+# 4. Scansione indicatori di compromissione spyware (Pegasus / Predator)
+imancraft-cli spyware-scan "C:\Backups\iPhone_00008110-000A648136D0A01E"
+
+# 5. Estrazione massiva automatizzata (Backup Extractor)
+imancraft-cli extract "C:\Backups\iPhone_00008110-000A648136D0A01E" -o "D:\Evidenze_Estraibili"
+```
+
+---
+
+## Requisiti di Sistema
+
+| Componente | Requisito Minimo | Note di Configurazione |
 |---|---|---|
-| **Sistema Operativo** | Windows 10 / 11 a 64-bit | Sistema operativo supportato |
-| **FFmpeg & FFprobe** *(Consigliato)* | Presente nel PATH di sistema | Decodifica delle foto Apple HEIC/HEIF, estrazione miniature e riproduzione video/audio vocali |
-| **GPU con supporto Vulkan** *(Opzionale)* | NVIDIA GeForce (GTX/RTX), AMD Radeon, Intel Arc | Accelerazione hardware per la Super-Risoluzione AI 4×. *Se assente, l'app usa in automatico la CPU senza blocchi.* |
-| **Backup iOS** | Da iTunes, Finder, Apple Devices o iMazing | Cartella di backup standard o personalizzata |
+| **Sistema Operativo** | Windows 10 / 11 a 64 bit | Architettura `x86_64` |
+| **FFmpeg & FFprobe** | Versione 6.0 o superiore (nel PATH) | Necessario per la transcodifica HEIC/HEIF e il demux video/audio |
+| **GPU con supporto Vulkan** | Driver Vulkan 1.3 compatibili | Accelerazione hardware per la Super-Risoluzione SOTA Real-ESRGAN (NVIDIA, AMD, Intel). *In assenza di GPU, l'elaborazione passa automaticamente su CPU.* |
+| **Backup iOS** | Da iTunes, Finder, Apple Devices o iMazing | Cartella con `Manifest.db`, `Info.plist` e `Status.plist` |
 
-### 💡 Installazione Rapida di FFmpeg
-Se non hai `ffmpeg` installato, puoi aggiungerlo in un solo secondo aprendo PowerShell ed eseguendo:
+### Installazione di FFmpeg su Windows
+Qualora FFmpeg non risulti configurato nel PATH di sistema, è possibile installarlo tramite il gestore di pacchetti nativo di Windows:
+
 ```powershell
 winget install Gyan.FFmpeg
 ```
-Oppure scaricando la versione statica da [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/) ed estraendo `ffmpeg.exe` e `ffprobe.exe` nel PATH di Windows o nella stessa cartella di `imancraft.exe`.
 
-### 📂 Dove si trovano i backup iOS su Windows?
-IManCraft scansiona in automatico le cartelle predefinite di Apple:
-- **Apple Devices / iTunes moderno**: `%USERPROFILE%\Apple\MobileSync\Backup`
+In alternativa, estrarre i binari `ffmpeg.exe` e `ffprobe.exe` direttamente nella directory contenente l'eseguibile `imancraft.exe`.
+
+### Percorsi di Rilevamento Predefiniti dei Backup iOS
+IManCraft scansiona automaticamente le seguenti posizioni di sistema:
+- **Applicazione Dispositivi Apple / iTunes moderno**: `%USERPROFILE%\Apple\MobileSync\Backup`
 - **iTunes classico**: `%APPDATA%\Apple Computer\MobileSync\Backup`
-- **Cartelle esterne (Hard Disk / SSD USB)**: Puoi aggiungere qualsiasi cartella personalizzata tramite **File → Aggiungi cartella di backup…** (`Ctrl+O`).
+- **Directory arbitrarie**: Configurabili da menu (`File -> Aggiungi cartella di backup...` o `Ctrl + O`).
 
 ---
 
-## 🚀 Installazione
+## Compilazione dai Sorgenti
 
-### Metodo 1: Pacchetto Portabile Precompilato (Consigliato)
-1. Scarica l'ultima release `IManCraft-vX.Y.Z-win64.zip` dalla sezione [Releases](https://github.com/SuicideBoy/iManCraft/releases).
-2. Estrai il contenuto del file ZIP in una cartella a tuo piacimento (es. `C:\Programmi\IManCraft\` o sul Desktop).
-3. Avvia l'applicazione facendo doppio clic su `imancraft.exe` oppure sullo script rapido `Avvia IManCraft.bat`.
-   - *Zero installazione nel registro di Windows: l'app è completamente portabile.*
-   - *Assicurati che `sqlite3.dll` rimanga sempre nella stessa cartella dell'eseguibile.*
+### Prerequisiti di Build
+- Toolchain Rust `stable-x86_64-pc-windows-gnu`.
+- Linker `rust-lld` (configurato in `.cargo/config.toml`).
+- Libreria di importazione SQLite: il repository include `lib/sqlite3.dll` e la relativa import library `lib/libsqlite3.dll.a`. La build script di Cargo copia automaticamente le librerie nei percorsi target.
 
-### Metodo 2: Compilazione dai Sorgenti (per sviluppatori)
+### Procedura di Compilazione
+
 ```bash
-# 1. Clona il repository
+# 1. Clonazione del repository
 git clone https://github.com/SuicideBoy/iManCraft.git
 cd iManCraft
 
-# 2. Esegui i test di verifica (20 test)
+# 2. Esecuzione della suite di test automatizzati (39 test unitari e di integrazione)
 cargo test --workspace
 
-# 3. Compila gli eseguibili ottimizzati in modalità Release
+# 3. Compilazione ottimizzata in modalità Release
 cargo build --release --workspace
 ```
-Gli eseguibili saranno generati in `target/release/` (`imancraft.exe` e `imancraft-cli.exe`).
+
+Gli eseguibili compilati saranno generati in:
+- `target/x86_64-pc-windows-gnu/release/imancraft.exe` (Applicazione Desktop)
+- `target/x86_64-pc-windows-gnu/release/imancraft-cli.exe` (Interfaccia CLI)
 
 ---
 
-## 📖 Guida all'Uso Passo-Passo
+## Scorciatoie da Tastiera
 
-### 1. Selezione e Caricamento del Backup
-All'avvio, IManCraft scansiona automaticamente le cartelle di sistema e presenta i backup rilevati nella schermata **Dispositivi**:
-- Fai clic sulla scheda del dispositivo desiderato per caricarlo come backup attivo.
-- Se il backup si trova su un hard disk esterno o in un percorso differente, premi **`Ctrl + O`** (o menu *File → Aggiungi cartella di backup…*) e seleziona la cartella contenente il backup.
-
-### 2. Sblocco dei Backup Cifrati con Password
-Se il backup è protetto da cifratura iOS:
-- Nella parte superiore apparirà un avviso con un campo di testo protetto per la password.
-- Inserisci la password impostata su iOS e fai clic su **Sblocca**.
-- *Garantito al 100% in RAM:* Le chiavi crittografiche e i database vengono decifrati **esclusivamente in memoria volatile**. Nessun file decifrato viene salvato su disco.
-
-### 3. Navigazione tra le Sezioni (Rail a Sinistra)
-Usa il menu laterale a scomparsa per consultare i tuoi dati:
-- **Discover (`Ctrl + D`)**: Panoramica con barra segmentata dello spazio su disco (Foto, App, Audio, Video, Altro), stato del dispositivo e 8 pulsanti di azione rapida.
-- **WhatsApp**: Esplora le chat, ascolta i messaggi vocali con il player audio integrato, filtra i messaggi per **intervallo esatto di date e ore** e visualizza la galleria multimediale completa.
-- **Telegram Forensics**: Ispezione forense delle preferenze, startup time, timestamp della cache e database Postbox/legacy.
-- **Foto & Video**: Griglia virtualizzata di tutte le foto e video. Gli elementi memorizzati **solo su iCloud** vengono contrassegnati con l'icona ☁ e mostrano l'anteprima memorizzata localmente. Fai doppio clic su una foto per aprire il visualizzatore a tutto schermo con zoom fluido e navigazione con frecce.
-- **Cerca (`Ctrl + F`)**: Ricerca globale istantanea simultanea su Contatti, Note, Calendari, Promemoria, chat WhatsApp e messaggi SMS.
-- **Sicurezza**: Esegui con un clic una scansione forense contro gli IOC (indicatori di compromissione) degli spyware Pegasus e Predator.
-
-### 4. Come Usare la Super-Risoluzione AI GPU 4×
-1. Apri una qualsiasi foto, anteprima compressa di WhatsApp o fermo immagine video a tutto schermo nel visualizzatore.
-2. Nella barra superiore fai clic sul pulsante **`✨ Migliora con AI (GPU 4×)`**.
-3. Apparirà il pannello modale ArtCraft con barra di progresso pulsante mentre la scheda video (NVIDIA GeForce / AMD Radeon via Vulkan) ricostruisce i dettagli ad alta frequenza (in circa 2 secondi).
-4. Al termine, usa lo switcher interattivo **`[✨ 4× AI (Migliorato) | Originale]`** per confrontare istantaneamente la qualità prima e dopo.
-5. Fai clic su **`⬇ Salva 4× JPEG…`** per esportare l'immagine migliorata a piena risoluzione.
-
-### 5. Esportazione dei Dati
-- **Excel (.xlsx)**: Disponibile in Messaggi, WhatsApp, Chiamate, Contatti, Calendari e Promemoria per esportare fogli di calcolo professionali.
-- **Stampa / PDF (.html)**: In Messaggi e WhatsApp puoi esportare un documento HTML responsive con layout a bolle conforme alla stampa A4 o salvataggio nativo in PDF dal browser.
-- **vCard (.vcf) & iCalendar (.ics)**: Esportazione conforme agli standard RFC per importare contatti e calendari su Outlook, Google o un nuovo iPhone.
-- **Backup Extractor (`Ctrl + E`)**: Dalla sezione *Strumenti*, esporta l'intero backup organizzato automaticamente in cartelle (Contatti, Note, Calendario, ecc.) con un solo clic.
+| Combinazione | Contesto | Azione |
+|---|---|---|
+| `Ctrl + D` | Globale | Passa alla schermata **Discover** (Panoramica e azioni rapide) |
+| `Ctrl + F` | Globale | Attiva la **Ricerca Globale** unificata |
+| `Ctrl + E` | Globale | Apri lo strumento **Backup Extractor** (Esportazione guidata) |
+| `Ctrl + O` | Globale | Apri dialogo per aggiungere una directory di backup esterna |
+| `Ctrl + R` | Globale | Ricarica e riesegui la scansione delle cartelle di backup |
+| `Ctrl + H` | Globale | Visualizza la cronologia delle operazioni e log di background |
+| `Ctrl + ,` | Globale | Apri il pannello **Impostazioni** (Tema, accento di colore, scala UI) |
+| `Esc` | Visualizzatore | Chiudi il visualizzatore a schermo intero o il modale attivo |
+| `Freccia Sinistra / Destra` | Visualizzatore | Naviga all'elemento multimediale precedente / successivo |
+| `Spazio` | Player | Avvia / Metti in pausa la riproduzione video o audio vocale |
 
 ---
 
-## ⌨️ Scorciatoie da Tastiera
-
-| Scorciatoia | Azione |
-|---|---|
-| `Ctrl + D` | Vai alla schermata **Discover** (Panoramica e azioni rapide) |
-| `Ctrl + F` | Apri la **Ricerca Globale** unificata |
-| `Ctrl + E` | Apri lo strumento **Backup Extractor** (Esportazione di massa) |
-| `Ctrl + O` | Aggiungi una cartella di backup personalizzata o esterna |
-| `Ctrl + R` | Ricarica e ri-scansiona i backup su disco |
-| `Ctrl + H` | Mostra la **Cronologia Operazioni** e log in background |
-| `Ctrl + ,` | Apri le **Impostazioni** (Tema, accento di colore, zoom) |
-| `Esc` | Chiudi il visualizzatore foto/video a tutto schermo |
-| `← / →` | Foto precedente / successiva nel visualizzatore |
-| `Spazio` | Play / Pausa riproduzione video o audio |
-
----
-
-## 🗺️ Roadmap & Prossimi Sviluppi
-
-I seguenti obiettivi rappresentano le priorità di sviluppo per le prossime release di iManCraft:
-
-- [ ] **🧠 Restauro Neurale Avanzato per Anteprime iCloud & Media a Bassa Risoluzione**
-  - Integrazione di modelli locali SOTA (*State of the Art*) per ricostruire foto e immagini quando il file originale si trova su iCloud e nel backup locale è presente solo una miniatura compressa o sfocata (120–320px):
-    - **Face Restoration neurale** (modelli *CodeFormer* / *GFPGAN* via runtime ONNX / NCNN con accelerazione GPU Vulkan/DirectML) per ricostruire volti, sguardi e dettagli fisionomici nitidi anche da miniature fortemente degradate.
-    - **General Photo Restoration & Deblurring** (modelli *SwinIR* / *HAT* / *Restormer* e modelli generativi diffusion-guided come *SeeSR/DiffBIR*) per sintetizzare dettagli realistici ad alta frequenza e rimuovere artefatti di compressione JPEG/HEIC.
-    - Pipeline 100% locale, privata ed eseguibile senza ambienti Python esterni (runtime nativo C++/Rust stand-alone).
-
-- [ ] **🐧 Supporto Nativo Linux**
-  - Compilazione e ottimizzazione per distribuzioni Linux (Ubuntu/Debian, Fedora, Arch):
-    - Backend grafico nativo `wgpu` con supporto completo sia per **Wayland** che per **X11**.
-    - Riconoscimento automatico dei percorsi di backup iOS su Linux (es. backup creati tramite `libimobiledevice` / `idevicebackup2`).
-    - Distribuzione in formato universale e portatile **AppImage** e **Flatpak**.
-
-- [x] **🔓 Brute-force & Password Recovery per Note Protette iOS (Completato)**
-  - Modulo integrato per il recupero credenziali e la decrittazione delle note bloccate (`NoteStore.sqlite`):
-    - Estrazione automatica e resiliente dei parametri crittografici Apple (`ZCRYPTOSALT`, `ZCRYPTOWRAPPEDKEY`, `ZCRYPTOITERATIONCOUNT`).
-    - Motore di attacco da indizio password (hint-based), PIN a 4/6 cifre e wordlist personalizzate (`.txt`) scritto in puro Rust multi-thread via `rayon`.
-    - Derivazione PBKDF2-HMAC-SHA256 (20.000 iterazioni) e verifica immediata RFC 3394 con zero falsi positivi; decifratura del payload AES-GCM ed estrazione testo Protobuf.
-    - Sblocco a cascata nell'interfaccia ArtCraft: lo sblocco di una nota decifra automaticamente tutte le note dell'account.
-
-- [ ] **🐛 Bug Fixing & Rifinitura Continua**
-  - Risoluzione delle anomalie residue nel rendering delle anteprime WhatsApp e percorsi alias offline iCloud.
-  - Ottimizzazione del consumo di memoria (VRAM e RAM di sistema) durante l'ispezione di backup di grandi dimensioni (>100 GB).
-  - Garanzia di compatibilità con le variazioni dello schema SQLite introdotte con iOS 17 e iOS 18.
-
----
-
-## 📁 Struttura del Progetto
+## Struttura del Repository
 
 ```
 iManCraft/
-├── app/                  # Interfaccia grafica nativa egui + wgpu (Design ArtCraft)
+├── app/                  # Applicazione grafica nativa (egui 0.37 + wgpu)
 │   ├── src/
-│   │   ├── views/        # Le 19 sezioni visuali dell'applicazione
-│   │   ├── upscaler.rs   # Motore di Super-Risoluzione AI GPU & Lanczos3+CAS
-│   │   ├── images.rs     # Cache texture asincrona con priorità LIFO
-│   │   ├── player.rs     # Riproduttore video e audio nativo
-│   │   ├── theme.rs      # Design system Craft (palette, densità, token grafici)
-│   │   └── main.rs       # Entrypoint della GUI
-├── cli/                  # CLI standalone headless (imancraft-cli)
+│   │   ├── views/        # Moduli visuali per le 19 sezioni dell'interfaccia
+│   │   ├── upscaler.rs   # Pipeline neurale SOTA UltraEnhance (4x / 8x)
+│   │   ├── images.rs     # Gestore cache texture asincrona LIFO
+│   │   ├── player.rs     # Riproduttore multimediale video/audio rodio + ffmpeg
+│   │   ├── theme.rs      # Design system Craft (color tokens, font, layout)
+│   │   └── main.rs       # Entry point della GUI
+├── cli/                  # Interfaccia headless per scripting e automazione
 ├── crates/
-│   └── core/             # Libreria core di analisi forense, crittografia e database
-├── assets/               # Icone e risorse dell'applicazione
-├── docs/                 # Documentazione tecnica e matrici di reverse engineering
-├── lib/                  # Dipendenze native SQLite per Windows
-├── tools/                # Motori opzionali per l'upscaling neurale
-├── package.ps1           # Script di automazione packaging e checksum SHA-256
-└── installer.iss         # Script Inno Setup per l'installer Windows
+│   └── core/             # Libreria core (imancraft-core) per parsing e crittografia
+├── assets/               # Icone e risorse vettoriali
+├── docs/                 # Documentazione tecnica e matrici di compatibilità
+├── lib/                  # Dipendenze native e librerie di importazione SQLite
+├── tools/                # Runtime opzionali per l'inferenza Real-ESRGAN Vulkan
+├── dist/                 # Struttura di distribuzione e pacchettizzazione Windows
+└── installer.iss         # Script Inno Setup per la creazione del pacchetto installer
 ```
 
 ---
 
-## ⚖️ Licenza & Disclaimer
+## Licenza e Disclaimer Legale
 
-Questo software è distribuito sotto licenza **MIT** (vedi [LICENSE](LICENSE)).
+Questo progetto è distribuito sotto i termini della licenza **MIT**. Consultare il file [LICENSE](LICENSE) per i termini completi.
 
-*Disclaimer: IManCraft è un progetto open source indipendente sviluppato per scopi di analisi forense, backup personale e interoperabilità dei dati. iPhone, iPad, iOS, iTunes e Apple sono marchi registrati di Apple Inc. iMazing è un marchio registrato di DigiDNA SARL. IManCraft non è affiliato con né approvato da alcuna delle suddette entità.*
+*Disclaimer: IManCraft è un progetto open source indipendente sviluppato per scopi di ricerca scientifica, interoperabilità dei dati e analisi forense digitale. Apple, iPhone, iPad, iOS, iTunes, Finder e iCloud sono marchi registrati di Apple Inc. iMazing è un marchio registrato di DigiDNA SARL. IManCraft non è affiliato, sponsorizzato né approvato da alcuna delle suddette entità commerciali.*
