@@ -30,7 +30,7 @@ Copy-Item "lib\sqlite3.dll" $distDir\
 Copy-Item "assets\imancraft.ico" $distDir\
 Copy-Item "LEGGIMI.txt" $distDir\
 if (Test-Path "tools") {
-    Copy-Item "tools" -Destination $distDir -Recurse
+    Copy-Item "tools" -Destination $distDir -Recurse -Force
 }
 
 # Launcher rapido
