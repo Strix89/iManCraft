@@ -223,6 +223,7 @@ pub struct State {
     chat_filter: Option<FilterUi>,
     applied: Filter,
     gallery: Option<Task<Vec<WaMessage>>>,
+    all_media: Option<Task<Vec<WaMessage>>>,
     // ricerca globale
     search: Option<FilterUi>,
     search_chat: Option<i64>,
@@ -249,6 +250,7 @@ impl Default for State {
             chat_filter: None,
             applied: Filter::default(),
             gallery: None,
+            all_media: None,
             search: None,
             search_chat: None,
             results: None,
@@ -268,6 +270,7 @@ impl State {
     fn open_chat(&mut self, ctx: &egui::Context, env: &Env, id: i64, cursor: Cursor) {
         self.mode = Mode::Chat(id);
         self.gallery = None;
+        self.all_media = Some(tasks::load(ctx, "Media chat WhatsApp", env.backup, move |cx| wa::media(cx, id)));
         self.audio = None;
         self.msgs.clear();
         self.applied = Filter::default();
@@ -576,8 +579,33 @@ impl State {
             ui.weak(format!("Filtro attivo: {} messaggi caricati{}", self.msgs.len(), if self.older || self.newer { " (altri disponibili)" } else { "" }));
         }
         let loading = self.pending.is_some();
-        // media della pagina, per il visualizzatore
-        let media: Vec<viewer::Item> = self
+        // media della pagina o dell'intera chat (se caricata), per il visualizzatore a tutto schermo
+        let all_chat_media: Option<Vec<viewer::Item>> = self.all_media.as_ref().and_then(|t| t.ready()).and_then(|r| r.as_ref().ok()).map(|list| {
+            let mut v: Vec<viewer::Item> = list
+                .iter()
+                .filter(|m| matches!(m.kind, Kind::Image | Kind::Video))
+                .filter_map(|m| {
+                    let md = m.media.as_ref()?;
+                    (md.id.is_some() || md.thumb.is_some()).then(|| viewer::Item {
+                        backup: env.backup.clone(),
+                        id: md.id.clone(),
+                        thumb: md.thumb.clone(),
+                        name: md.name.clone(),
+                        t: m.t,
+                        size: md.size as u64,
+                        video: m.kind == Kind::Video,
+                        cloud: false,
+                        w: md.w as i64,
+                        h: md.h as i64,
+                    })
+                })
+                .collect();
+            // Ordiniamo cronologicamente per consentire lo scorrimento naturale con le freccette
+            v.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+            v
+        });
+
+        let page_media: Vec<viewer::Item> = self
             .msgs
             .iter()
             .filter(|m| matches!(m.kind, Kind::Image | Kind::Video))
@@ -597,6 +625,8 @@ impl State {
                 })
             })
             .collect();
+
+        let media = all_chat_media.unwrap_or(page_media);
         let mut action: Option<Cursor> = None;
         let names = chat.kind != ChatKind::Chat;
         egui::ScrollArea::vertical().id_salt(("wa-msgs", chat.id)).auto_shrink(false).show(ui, |ui| {

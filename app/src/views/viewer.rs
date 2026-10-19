@@ -85,6 +85,7 @@ impl Viewer {
             self.upscaler_err = None;
             self.video_upscaling = None;
             self.video_upscaled_path = None;
+            self.player = None;
         }
     }
 
@@ -138,7 +139,29 @@ impl Viewer {
             }
         }
 
-        let (esc, left, right, space) = ctx.input(|i| (i.key_pressed(Key::Escape), i.key_pressed(Key::ArrowLeft), i.key_pressed(Key::ArrowRight), i.key_pressed(Key::Space)));
+        let mut esc = false;
+        let mut left = false;
+        let mut right = false;
+        let mut space = false;
+
+        ctx.input(|i| {
+            esc = i.key_pressed(Key::Escape);
+            space = i.key_pressed(Key::Space);
+            left = i.key_pressed(Key::ArrowLeft) || i.key_pressed(Key::A);
+            right = i.key_pressed(Key::ArrowRight) || i.key_pressed(Key::D);
+            for e in &i.events {
+                if let egui::Event::Key { key, pressed: true, .. } = e {
+                    match key {
+                        Key::ArrowLeft | Key::A => left = true,
+                        Key::ArrowRight | Key::D => right = true,
+                        Key::Escape => esc = true,
+                        Key::Space => space = true,
+                        _ => {}
+                    }
+                }
+            }
+        });
+
         if esc {
             if self.show_ai_modal {
                 self.show_ai_modal = false;
@@ -154,12 +177,28 @@ impl Viewer {
             }
             return false;
         }
-        if left {
-            self.step(-1);
+
+        if !self.show_ai_modal {
+            if left {
+                self.step(-1);
+                ctx.memory_mut(|m| {
+                    if let Some(id) = m.focused() {
+                        m.surrender_focus(id);
+                    }
+                });
+                ctx.request_repaint();
+            }
+            if right {
+                self.step(1);
+                ctx.memory_mut(|m| {
+                    if let Some(id) = m.focused() {
+                        m.surrender_focus(id);
+                    }
+                });
+                ctx.request_repaint();
+            }
         }
-        if right {
-            self.step(1);
-        }
+
         let mut open = true;
         let screen = ctx.content_rect();
         egui::Area::new(egui::Id::unique("imancraft-viewer")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {

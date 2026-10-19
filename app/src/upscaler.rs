@@ -75,6 +75,19 @@ fn detect_gpu() -> GpuInfo {
     }
 }
 
+/// Rimuove il prefisso esteso Windows `\\?\` dai percorsi canonici
+/// per garantire piena compatibilità con tool C/C++ esterni (Real-ESRGAN NCNN Vulkan, FFmpeg).
+pub fn clean_path(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{}", stripped))
+    } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        p.to_path_buf()
+    }
+}
+
 /// Cerca l'eseguibile di Real-ESRGAN Vulkan nella directory dell'app, in tools o nel PATH.
 pub fn find_neural_engine() -> Option<PathBuf> {
     let candidates = [
@@ -84,7 +97,8 @@ pub fn find_neural_engine() -> Option<PathBuf> {
 
     for c in &candidates {
         if c.exists() {
-            return Some(std::fs::canonicalize(c).unwrap_or_else(|_| c.clone()));
+            let canon = std::fs::canonicalize(c).unwrap_or_else(|_| c.clone());
+            return Some(clean_path(&canon));
         }
     }
 
@@ -92,11 +106,11 @@ pub fn find_neural_engine() -> Option<PathBuf> {
         if let Some(dir) = exe.parent() {
             let p1 = dir.join(r"tools\upscaler\realesrgan-ncnn-vulkan.exe");
             if p1.exists() {
-                return Some(p1);
+                return Some(clean_path(&p1));
             }
             let p2 = dir.join("realesrgan-ncnn-vulkan.exe");
             if p2.exists() {
-                return Some(p2);
+                return Some(clean_path(&p2));
             }
         }
     }
@@ -113,7 +127,7 @@ pub fn find_neural_engine() -> Option<PathBuf> {
                 if let Some(first) = stdout.lines().next() {
                     let p = PathBuf::from(first.trim());
                     if p.exists() {
-                        return Some(p);
+                        return Some(clean_path(&p));
                     }
                 }
             }
@@ -153,15 +167,20 @@ pub fn upscale_neural(
             .map_err(|e| format!("Salvataggio temporaneo fallito: {e}"))?;
     }
 
-    let models_dir = exe.parent().map(|p| p.join("models")).unwrap_or_else(|| PathBuf::from("models"));
+    let engine_path = clean_path(exe);
+    let engine_dir = engine_path.parent().unwrap_or(Path::new("."));
+    let models_dir = clean_path(&engine_dir.join("models"));
+    let in_clean = clean_path(&in_path);
+    let out_clean = clean_path(&out_path);
     let tile_str = tile_size.to_string();
 
-    let mut cmd = Command::new(exe);
+    let mut cmd = Command::new(&engine_path);
+    cmd.current_dir(engine_dir);
     cmd.args([
         "-i",
-        in_path.to_str().unwrap_or(""),
+        in_clean.to_str().unwrap_or(""),
         "-o",
-        out_path.to_str().unwrap_or(""),
+        out_clean.to_str().unwrap_or(""),
         "-s",
         &scale.to_string(),
         "-n",
@@ -204,17 +223,19 @@ pub fn upscale_video_pipeline(
     scale: u32,
 ) -> Result<PathBuf, String> {
     let engine = find_neural_engine().ok_or("Motore neurale Vulkan (realesrgan-ncnn-vulkan) non trovato")?;
-    let models_dir = engine.parent().map(|p| p.join("models")).unwrap_or_else(|| PathBuf::from("models"));
+    let engine = clean_path(&engine);
+    let engine_dir = engine.parent().unwrap_or(Path::new("."));
+    let models_dir = clean_path(&engine_dir.join("models"));
 
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(54321);
     let temp_dir = std::env::temp_dir().join(format!("imancraft_video_sr_{nonce}"));
-    let in_dir = temp_dir.join("in");
-    let out_dir = temp_dir.join("out");
-    let audio_path = temp_dir.join("audio.aac");
-    let temp_out = temp_dir.join("final_upscaled.mp4");
+    let in_dir = clean_path(&temp_dir.join("in"));
+    let out_dir = clean_path(&temp_dir.join("out"));
+    let audio_path = clean_path(&temp_dir.join("audio.aac"));
+    let temp_out = clean_path(&temp_dir.join("final_upscaled.mp4"));
 
     std::fs::create_dir_all(&in_dir).map_err(|e| format!("Creazione cartella temporanea fallita: {e}"))?;
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("Creazione cartella temporanea fallita: {e}"))?;
@@ -277,7 +298,10 @@ pub fn upscale_video_pipeline(
     let has_audio = audio_path.exists() && std::fs::metadata(&audio_path).map(|m| m.len() > 0).unwrap_or(false);
 
     // 4. Esecuzione batch su GPU Vulkan (tiling a 256 per sicurezza VRAM)
+    let sr_scale_val = if scale == 2 || scale == 3 || scale == 4 { scale } else { 4 };
+    let sr_scale_str = sr_scale_val.to_string();
     let mut sr_cmd = Command::new(&engine);
+    sr_cmd.current_dir(engine_dir);
     sr_cmd.args([
         "-i",
         in_dir.to_str().unwrap_or(""),
@@ -286,7 +310,7 @@ pub fn upscale_video_pipeline(
         "-n",
         "realesrgan-x4plus",
         "-s",
-        &scale.to_string(),
+        &sr_scale_str,
         "-m",
         models_dir.to_str().unwrap_or("models"),
         "-t",
@@ -302,7 +326,9 @@ pub fn upscale_video_pipeline(
     let sr_res = sr_cmd.output().map_err(|e| format!("Esecuzione motore neurale fallita: {e}"))?;
     if !sr_res.status.success() {
         let err = String::from_utf8_lossy(&sr_res.stderr);
-        return Err(format!("Errore GPU Vulkan durante upscaling video: {err}"));
+        let out_str = String::from_utf8_lossy(&sr_res.stdout);
+        let combined = if err.trim().is_empty() { out_str.into_owned() } else { err.into_owned() };
+        return Err(format!("Errore GPU Vulkan durante upscaling video: {combined}"));
     }
 
     // 5. Re-muxing con filtro CAS e codifica hardware NVENC (con fallback software)
@@ -953,5 +979,17 @@ mod tests {
             8
         };
         assert_eq!(scale, 4);
+    }
+
+    #[test]
+    fn test_clean_path() {
+        let p_unc = Path::new(r"\\?\C:\Users\tester\models");
+        assert_eq!(clean_path(p_unc), PathBuf::from(r"C:\Users\tester\models"));
+
+        let p_unc_share = Path::new(r"\\?\UNC\server\share\file.mp4");
+        assert_eq!(clean_path(p_unc_share), PathBuf::from(r"\\server\share\file.mp4"));
+
+        let p_normal = Path::new(r"C:\tools\upscaler");
+        assert_eq!(clean_path(p_normal), PathBuf::from(r"C:\tools\upscaler"));
     }
 }
