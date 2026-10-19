@@ -263,24 +263,14 @@ pub mod tests {
 
     #[test]
     fn test_backup_notes_verifier() {
-        let salt = hex("3634f4ac2c25789d50f4591656a8bd25");
-        let verifier = hex("b810b5d57a6fae0e6fcbeefc2cf07da50c137515ca135ff1");
-        let candidates = [
-            "nulla è reale, tutto è lecito",
-            "Nulla è reale, tutto è lecito",
-            "nulla e reale, tutto e lecito",
-            "Nulla e reale, tutto e lecito",
-            "nulla è reale tutto è lecito",
-            "Nulla è reale tutto è lecito",
-            "nulla", "reale", "lecito", "assassin", "assassins", "creed", "altair", "ezio",
-        ];
-        for cand in candidates {
-            let mut kek = [0u8; 16];
-            pbkdf2::pbkdf2_hmac::<sha2::Sha256>(cand.as_bytes(), &salt, 20000, &mut kek);
-            if let Some(unwrapped) = aes_unwrap(&kek, &verifier) {
-                println!("FOUND PASSWORD: '{}' -> unwrapped key: {:02x?}", cand, unwrapped);
-            }
-        }
+        // Vettore sintetico conforme alle specifiche Apple Notes RFC 3394
+        let salt = hex("102030405060708090a0b0c0d0e0f001");
+        let mut kek = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(b"TestPassword2026", &salt, 20000, &mut kek);
+        let key_to_wrap = [0x55u8; 16];
+        let wrapped = aes_wrap(&kek, &key_to_wrap);
+        let unwrapped = aes_unwrap(&kek, &wrapped).expect("Unwrap sintetico fallito");
+        assert_eq!(unwrapped, key_to_wrap);
     }
 }
 

@@ -102,8 +102,8 @@ COMANDI DI ESPORTAZIONE:
 
 ESEMPI:
     imancraft-cli list
-    imancraft-cli info "C:\Backups\00008110-000A648136D0A01E"
-    imancraft-cli unlock-notes "C:\Backups\00008110-000A648136D0A01E" 12345678 --output note.txt
+    imancraft-cli info "C:\Backups\00008030-001234567890002E"
+    imancraft-cli unlock-notes "C:\Backups\00008030-001234567890002E" 12345678 --output note.txt
     imancraft-cli search "C:\Backups\iPhone14" "Mario Rossi"
     imancraft-cli extract "C:\Backups\iPhone14" --output "C:\Export_iPhone"
     imancraft-cli export-contacts "C:\Backups\iPhone14" --output "rubrica.vcf"

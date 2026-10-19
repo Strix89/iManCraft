@@ -28,6 +28,8 @@ target_hash.txt
 found_pin.txt
 PIN_TROVATO.txt
 NOTE_SBLOCCATE.txt
+Bruteforce_GPU.ps1
+Avvia_Bruteforce_GPU.bat
 
 # File di sistema e IDE
 Thumbs.db

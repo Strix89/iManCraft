@@ -215,16 +215,16 @@ Il binario headless `imancraft-cli` consente l'integrazione di IManCraft all'int
 imancraft-cli list
 
 # 2. Ispezione dettagliata dei metadati (inclusi backup protetti da password)
-imancraft-cli info "C:\Backups\iPhone_00008110-000A648136D0A01E" --password "segreta123"
+imancraft-cli info "C:\Backups\iPhone_00008030-001234567890002E" --password "segreta123"
 
 # 3. Ricerca full-text su tutte le sorgenti di dati
-imancraft-cli search "C:\Backups\iPhone_00008110-000A648136D0A01E" "coordinate_bancarie"
+imancraft-cli search "C:\Backups\iPhone_00008030-001234567890002E" "coordinate_bancarie"
 
 # 4. Scansione indicatori di compromissione spyware (Pegasus / Predator)
-imancraft-cli spyware-scan "C:\Backups\iPhone_00008110-000A648136D0A01E"
+imancraft-cli spyware-scan "C:\Backups\iPhone_00008030-001234567890002E"
 
 # 5. Estrazione massiva automatizzata (Backup Extractor)
-imancraft-cli extract "C:\Backups\iPhone_00008110-000A648136D0A01E" -o "D:\Evidenze_Estraibili"
+imancraft-cli extract "C:\Backups\iPhone_00008030-001234567890002E" -o "D:\Evidenze_Estraibili"
 ```
 
 ---

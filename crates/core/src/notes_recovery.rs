@@ -669,14 +669,13 @@ mod tests {
 
     #[test]
     fn test_hint_generator() {
-        let hint = "nulla è reale, tutto è lecito";
+        let hint = "ricorda sempre la data di nascita";
         let cands = generate_hint_candidates(hint);
-        assert!(cands.contains(&"nulla è reale, tutto è lecito".to_string()));
-        assert!(cands.contains(&"nulla".to_string()));
-        assert!(cands.contains(&"reale".to_string()));
-        assert!(cands.contains(&"lecito".to_string()));
-        assert!(cands.contains(&"nulla e reale tutto e lecito".to_string()));
-        assert!(cands.contains(&"nulla123".to_string()));
+        assert!(cands.contains(&"ricorda sempre la data di nascita".to_string()));
+        assert!(cands.contains(&"ricorda".to_string()));
+        assert!(cands.contains(&"sempre".to_string()));
+        assert!(cands.contains(&"nascita".to_string()));
+        assert!(cands.contains(&"ricorda123".to_string()));
         assert!(cands.len() > 20);
     }
 
@@ -721,9 +720,12 @@ mod tests {
 
     #[test]
     fn test_real_backup_context_loading() {
-        let db_path = r"F:\DumpIOSPing1\Backup\00008110-000A648136D0A01E\4f\4f98687d8ab0d6d1a371110e6b7300f6e465bef2";
-        if !std::path::Path::new(db_path).exists() { return; }
-        let conn = crate::open_db(std::path::Path::new(db_path)).unwrap();
+        let db_path = match std::env::var("IMANCRAFT_TEST_NOTESTORE_DB") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        if !std::path::Path::new(&db_path).exists() { return; }
+        let conn = crate::open_db(std::path::Path::new(&db_path)).unwrap();
 
         let (verifier, notes) = load_notes_crypto_context(&conn);
         assert!(verifier.is_some(), "Verifier non trovato!");
@@ -786,9 +788,12 @@ mod tests {
     #[test]
     #[ignore]
     fn test_real_backup_8digit_pin() {
-        let db_path = r"F:\DumpIOSPing1\Backup\00008110-000A648136D0A01E\4f\4f98687d8ab0d6d1a371110e6b7300f6e465bef2";
-        if !std::path::Path::new(db_path).exists() { return; }
-        let conn = crate::open_db(std::path::Path::new(db_path)).unwrap();
+        let db_path = match std::env::var("IMANCRAFT_TEST_NOTESTORE_DB") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        if !std::path::Path::new(&db_path).exists() { return; }
+        let conn = crate::open_db(std::path::Path::new(&db_path)).unwrap();
         let (verifier, _) = load_notes_crypto_context(&conn);
         let v = verifier.unwrap();
 

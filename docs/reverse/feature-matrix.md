@@ -184,7 +184,7 @@ CREATE TABLE VERSIONS_OTHERFILES (
 | `0x010000000` | 268435456 | `DatasetFiles` | File generici (File Sharing / Documenti) |
 | `0xffffffff` | 4294967295 | `DatasetAll` | Tutti i dataset |
 
-*Esempio reale:* Nel backup di test dell'iPhone 14 presente in `F:\DumpIOSPing1\Backup\00008110-000A648136D0A01E`, `dataSets` vale `469966843` (`0x1C031FFB`), che corrisponde esattamente alla combinazione binaria:
+*Esempio reale:* Nel backup di test dell'iPhone 14 (`00008030-001234567890002E`), `dataSets` vale `469966843` (`0x1C031FFB`), che corrisponde esattamente alla combinazione binaria:
 Apps (1) + AppData (2) + Photos (8) + Messages (16) + CallHistory (32) + Voicemail (64) + Contacts (128) + Notes (256) + VoiceMemos (512) + Calendars (1024) + Safari (2048) + Other (65536) + Books (131072) + WhatsApp (4194304) + WhatsAppSMB (8388608) + Reminders (134217728) + Files (268435456).
 
 ---

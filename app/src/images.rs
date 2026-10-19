@@ -218,7 +218,10 @@ mod tests {
 
     #[test]
     fn test_real_thumb() {
-        let path = "F:\\DumpIOSPing1\\Backup\\00008110-000A648136D0A01E\\5f\\5f91d4093f9e2c8861761f78e0455fc742b478c3";
+        let path = match std::env::var("IMANCRAFT_TEST_THUMB") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
         if let Ok(bytes) = std::fs::read(path) {
             let res = parse_image_bytes(&bytes);
             assert!(res.is_some(), "Thumb should decode!");
