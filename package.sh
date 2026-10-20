@@ -6,8 +6,8 @@ echo "=============================================================="
 echo " CREAZIONE PACCHETTO DI DISTRIBUZIONE IMANCRAFT PER LINUX"
 echo "=============================================================="
 
-DIST_DIR="dist/IManCraft-v0.2.0-linux-x86_64"
-TAR_PATH="dist/IManCraft-v0.2.0-linux-x86_64.tar.gz"
+DIST_DIR="dist/IManCraft-v0.2.1-linux-x86_64"
+TAR_PATH="dist/IManCraft-v0.2.1-linux-x86_64.tar.gz"
 
 echo ""
 echo "[1/4] Compilazione in Release mode (GUI + CLI)..."

@@ -1,6 +1,6 @@
 ; Inno Setup Script per IManCraft
 #define MyAppName "IManCraft"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.2.1"
 #define MyAppPublisher "Crafting Apps"
 #define MyAppURL "https://github.com/Strix89/iManCraft"
 #define MyAppExeName "imancraft.exe"

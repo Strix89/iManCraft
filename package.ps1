@@ -2,11 +2,11 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host " CREAZIONE PACCHETTO DI DISTRIBUZIONE IMANCRAFT v0.2.0" -ForegroundColor Cyan
+Write-Host " CREAZIONE PACCHETTO DI DISTRIBUZIONE IMANCRAFT v0.2.1" -ForegroundColor Cyan
 Write-Host "══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 
-$distDir = "dist\IManCraft-v0.2.0-win64"
-$zipPath = "dist\IManCraft-v0.2.0-win64.zip"
+$distDir = "dist\IManCraft-v0.2.1-win64"
+$zipPath = "dist\IManCraft-v0.2.1-win64.zip"
 
 Write-Host "`n[1/4] Compilazione eseguibili in Release mode..." -ForegroundColor Yellow
 cargo build --release -p imancraft -p imancraft-cli

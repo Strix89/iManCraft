@@ -1,5 +1,5 @@
 ================================================================================
- IManCraft v0.2.0 — Viewer, Esploratore & Analisi Forense Backup iOS (64-bit)
+ IManCraft v0.2.1 — Viewer, Esploratore & Analisi Forense Backup iOS (64-bit)
 ================================================================================
 
 IManCraft è un'applicazione nativa per Windows scritta in puro Rust (egui + wgpu)

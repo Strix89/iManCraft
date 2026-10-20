@@ -1677,7 +1677,7 @@ dependencies = [
 
 [[package]]
 name = "imancraft"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "eframe",
@@ -1695,7 +1695,7 @@ dependencies = [
 
 [[package]]
 name = "imancraft-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "imancraft-core",
@@ -1703,7 +1703,7 @@ dependencies = [
 
 [[package]]
 name = "imancraft-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aes",
  "aes-gcm",
