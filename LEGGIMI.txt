@@ -11,12 +11,14 @@ CARATTERISTICHE PRINCIPALI:
 - Sola Lettura: non modifica mai i backup originali.
 - Sicurezza Totale: supporto per backup cifrati con chiavi e database decifrati
   esclusivamente in memoria RAM (nessun dato in chiaro viene salvato su disco).
-- 18 Sezioni di analisi:
+- 19 Sezioni di analisi:
   * Discover: panoramica del dispositivo, ripartizione memoria per categoria
     (Foto, App, Audio, Video, Altro), 8 azioni rapide e dettagli tecnici.
   * Messaggi & WhatsApp: conversazioni complete a bolle, note vocali con player,
     allegati multimediali, ricerca temporale, export Excel (XLSX) ed export HTML
     responsivo pronto per la stampa o salvataggio nativo in PDF.
+  * Telegram iOS: ispezione forense preferenze app/App Group, rilevamento chat
+    e gestione della policy di esclusione cloud Apple NSURLIsExcludedFromBackupKey.
   * Foto & Video: rullino fotografico, album, miniature, anteprime iCloud e
     funzione di Esportazione Massiva (Bulk Export).
   * Contatti & Note: rubrica con export vCard (.vcf) ed Excel; note con decodifica

@@ -2,7 +2,7 @@
 #define MyAppName "IManCraft"
 #define MyAppVersion "0.2.0"
 #define MyAppPublisher "Crafting Apps"
-#define MyAppURL "https://github.com/imancraft"
+#define MyAppURL "https://github.com/Strix89/iManCraft"
 #define MyAppExeName "imancraft.exe"
 
 [Setup]

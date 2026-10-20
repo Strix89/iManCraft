@@ -5,7 +5,7 @@ Client desktop nativo ad alte prestazioni per l'analisi forense, l'esplorazione 
 Progettato interamente in Rust con interfaccia grafica vettoriale nativa basata su egui e backend di rendering wgpu, IManCraft elimina qualsiasi dipendenza da runtime web o framework Electron. Integra un motore proprietario di decifratura crittografica operante esclusivamente in memoria volatile e una pipeline di super-risoluzione e restauro visivo SOTA accelerata via compute shader GPU Vulkan.
 
 [![Language](https://img.shields.io/badge/Language-Rust%202021-orange.svg)](https://www.rust-lang.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20x64%20(GNU)-blue.svg)](https://www.microsoft.com/windows)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20(x86__64)-blue.svg)](README.md#requisiti-di-sistema)
 [![GUI Framework](https://img.shields.io/badge/GUI-egui%200.37%20%2F%20wgpu-purple.svg)](https://github.com/emilk/egui)
 [![Acceleration](https://img.shields.io/badge/Compute-Vulkan%201.3%20%2F%20Rayon-green.svg)](https://www.khronos.org/vulkan/)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)

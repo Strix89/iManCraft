@@ -226,13 +226,13 @@ Dall'analisi di `iMazing-CLI.exe` sono stati identificati i comandi supportati:
 
 | Modulo / Funzionalità | iMazing 3.5.5 | IManCraft (Attuale) | IManCraft (Target Fase) | Note di Implementazione Clean-Room |
 |---|---|---|---|---|
-| **Interfaccia Grafica** | WPF .NET 4.6.2 (Windows) | Rust puro (`eframe`/`egui 0.37` + `wgpu`) | ✅ Fase 1 | Design system Crafting Apps nativo, zero C, zero browser |
-| **Backup iOS Non Cifrati** | Lettura/scrittura MobileBackup2 | Lettura completa Manifest.db | ✅ Fase 1 | Tabelle Files, hash 40 hex, decodifica plist binario |
-| **Backup iOS Cifrati** | Sblocco AES/PBKDF2/Keybag | Sblocco memoria AES-256-CBC RFC 3394 | ✅ Fase 1 | Decrittazione sicura zero-disk, range HTTP per seek |
-| **Viewer Foto / Video** | Player proprietario + QuickLook | Player nativo ffmpeg + rodio | ✅ Fase 1 | Tile grid HEIC via xstack, miniature iCloud 5005.JPG |
-| **WhatsApp Explorer** | Chat, media, export PDF/TXT | Chat a bolle, ricerca avanzata data/ora | ✅ Fase 1 (espansione F3) | Parser ChatStorage.sqlite, gestione Ogg Opus, foto profilo |
-| **iMessage / SMS** | Bolle, allegati, export PDF | Bolle, visualizzatore allegati | ✅ Fase 1 (espansione F3) | Parser typedstream attributedBody per iOS 16+ |
-| **Note, Contatti, Safari, Chiamate** | Tabelle/export vCard/CSV | Viste native virtualizzate | ✅ Fase 1 (espansione F3) | NoteStore.sqlite gzip protobuf, AddressBook, Safari |
+| **Interfaccia Grafica** | WPF .NET 4.6.2 (Windows) | Rust puro (`eframe`/`egui 0.37` + `wgpu`) | [FATTO] Fase 1 | Design system Crafting Apps nativo, zero C, zero browser |
+| **Backup iOS Non Cifrati** | Lettura/scrittura MobileBackup2 | Lettura completa Manifest.db | [FATTO] Fase 1 | Tabelle Files, hash 40 hex, decodifica plist binario |
+| **Backup iOS Cifrati** | Sblocco AES/PBKDF2/Keybag | Sblocco memoria AES-256-CBC RFC 3394 | [FATTO] Fase 1 | Decrittazione sicura zero-disk, range HTTP per seek |
+| **Viewer Foto / Video** | Player proprietario + QuickLook | Player nativo ffmpeg + rodio | [FATTO] Fase 1 | Tile grid HEIC via xstack, miniature iCloud 5005.JPG |
+| **WhatsApp Explorer** | Chat, media, export PDF/TXT | Chat a bolle, ricerca avanzata data/ora | [FATTO] Fase 1 (espansione F3) | Parser ChatStorage.sqlite, gestione Ogg Opus, foto profilo |
+| **iMessage / SMS** | Bolle, allegati, export PDF | Bolle, visualizzatore allegati | [FATTO] Fase 1 (espansione F3) | Parser typedstream attributedBody per iOS 16+ |
+| **Note, Contatti, Safari, Chiamate** | Tabelle/export vCard/CSV | Viste native virtualizzate | [FATTO] Fase 1 (espansione F3) | NoteStore.sqlite gzip protobuf, AddressBook, Safari |
 | **Snapshot `iMazing.Versions`** | Creazione e gestione Versions.db v4 | Non ancora implementato | **Fase 3** | Specifiche estratte al 100%: schema SQL pronto per driver Rust |
 | **Metadati `DDNABackup.plist`** | Generazione con bitmask 32-bit | Lettura parziale dei metadati | **Fase 3** | Bitmask decodificata al 100%: esporre dataset e dimensioni |
 | **Container `.imazingapp`** | Estrazione e ripristino sandbox | Non ancora implementato | **Fase 3** | Archivio ZIP (Container + iTunesMetadata.plist) implementabile con `zip-rs` |
