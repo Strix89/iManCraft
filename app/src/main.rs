@@ -170,7 +170,7 @@ impl App {
                             }
                         }
                         ui.separator();
-                        if ui.button("📋 Cronologia Operazioni  Ctrl+H").clicked() {
+                        if ui.button("Cronologia Operazioni  Ctrl+H").clicked() {
                             self.show_operations = true;
                         }
                     });
@@ -268,11 +268,11 @@ impl App {
                         let ops = tasks::running();
                         let hist = tasks::history();
                         let op_text = if !ops.is_empty() {
-                            format!("⏳ {} in corso ({})", ops.len(), hist.len())
+                            format!("In corso: {} ({})", ops.len(), hist.len())
                         } else if !hist.is_empty() {
-                            format!("📋 {} operazioni", hist.len())
+                            format!("Operazioni ({})", hist.len())
                         } else {
-                            "📋 Operazioni".to_string()
+                            "Operazioni".to_string()
                         };
                         if ui.small_button(op_text).on_hover_text("Cronologia Operazioni (Ctrl+H)").clicked() {
                             self.show_operations = !self.show_operations;
@@ -312,6 +312,9 @@ impl eframe::App for App {
             }
             if i.modifiers.command && i.key_pressed(egui::Key::H) {
                 self.show_operations = !self.show_operations;
+            }
+            if i.key_pressed(egui::Key::Escape) && self.show_operations {
+                self.show_operations = false;
             }
             if i.modifiers.command && i.key_pressed(egui::Key::Comma) {
                 self.section = Section::Settings;
@@ -384,16 +387,34 @@ impl eframe::App for App {
             });
         }
         if self.show_operations {
-            egui::Window::new("📋 Cronologia Operazioni")
+            let screen = ctx.content_rect();
+            let max_w = (screen.width() - 32.0).clamp(380.0, 720.0);
+            let max_h = (screen.height() - 40.0).clamp(240.0, 560.0);
+            let def_w = max_w.min(580.0);
+            let def_h = max_h.min(380.0);
+
+            egui::Window::new("Cronologia Operazioni")
+                .id(egui::Id::unique("operations_history_window"))
                 .collapsible(false)
-                .default_size([560.0, 360.0])
+                .default_size([def_w, def_h])
+                .min_size([360.0, 220.0])
+                .max_size([max_w, max_h])
+                .default_pos(screen.center())
+                .pivot(egui::Align2::CENTER_CENTER)
                 .resizable(true)
+                .frame(
+                    egui::Frame::new()
+                        .fill(p.panel)
+                        .stroke(Stroke::new(1.0, p.line))
+                        .corner_radius(egui::CornerRadius::same(8))
+                        .inner_margin(Margin::same(14)),
+                )
                 .open(&mut self.show_operations)
                 .show(&ctx, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Attività ed esportazioni eseguite").size(13.0));
+                        theme::section_label(ui, &p, "ATTIVITA ED ESPORTAZIONI");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("🗑 Svuota cronologia").clicked() {
+                            if ui.button("Svuota cronologia").clicked() {
                                 tasks::clear_history();
                             }
                         });
@@ -403,47 +424,80 @@ impl eframe::App for App {
 
                     let running = tasks::running();
                     if !running.is_empty() {
+                        ui.add_space(2.0);
                         ui.label(RichText::new("Operazioni in corso:").strong().color(p.accent));
+                        ui.add_space(4.0);
                         for op in &running {
-                            ui.horizontal(|ui| {
-                                ui.spinner();
-                                ui.label(RichText::new(op).strong());
-                            });
+                            egui::Frame::new()
+                                .fill(p.panel_alt)
+                                .stroke(Stroke::new(1.0, p.line))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .inner_margin(Margin::symmetric(10, 6))
+                                .show(ui, |ui| {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spinner();
+                                        ui.label(RichText::new(op).strong());
+                                    });
+                                });
+                            ui.add_space(4.0);
                         }
-                        ui.add_space(6.0);
+                        ui.add_space(2.0);
                         ui.separator();
                     }
 
                     let hist = tasks::history();
                     if hist.is_empty() && running.is_empty() {
-                        ui.add_space(12.0);
-                        ui.weak("Nessuna operazione registrata finora.");
+                        ui.add_space(20.0);
+                        ui.vertical_centered(|ui| {
+                            ui.weak("Nessuna operazione registrata finora.");
+                        });
                     } else if !hist.is_empty() {
+                        ui.add_space(2.0);
                         ui.label(RichText::new(format!("Completate ({})", hist.len())).strong());
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            egui::Grid::new("history_grid").striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
-                                ui.weak("Esito");
-                                ui.weak("Operazione");
-                                ui.weak("Durata");
-                                ui.end_row();
+                        ui.add_space(4.0);
 
-                                for entry in hist.iter().rev() {
-                                    if entry.success {
-                                        ui.label(RichText::new("✓").strong().color(p.success));
-                                    } else {
-                                        ui.label(RichText::new("✕").strong().color(p.danger));
-                                    }
-                                    ui.vertical(|ui| {
-                                        ui.label(&entry.label);
-                                        if let Some(err) = &entry.error {
-                                            ui.label(RichText::new(err).color(p.danger).size(11.0));
+                        egui_extras::TableBuilder::new(ui)
+                            .striped(true)
+                            .resizable(true)
+                            .auto_shrink([false, false])
+                            .column(egui_extras::Column::exact(45.0))
+                            .column(egui_extras::Column::remainder().at_least(180.0))
+                            .column(egui_extras::Column::exact(85.0))
+                            .header(22.0, |mut h| {
+                                h.col(|ui| {
+                                    ui.weak(RichText::new("ESITO").monospace().size(10.5));
+                                });
+                                h.col(|ui| {
+                                    ui.weak(RichText::new("OPERAZIONE").monospace().size(10.5));
+                                });
+                                h.col(|ui| {
+                                    ui.weak(RichText::new("DURATA").monospace().size(10.5));
+                                });
+                            })
+                            .body(|body| {
+                                let rows: Vec<_> = hist.iter().rev().collect();
+                                body.heterogeneous_rows(rows.iter().map(|e| if e.error.is_some() { 42.0 } else { 26.0 }), |mut row| {
+                                    let entry = rows[row.index()];
+                                    row.col(|ui| {
+                                        if entry.success {
+                                            ui.colored_label(p.success, "✓");
+                                        } else {
+                                            ui.colored_label(p.danger, "✕");
                                         }
                                     });
-                                    ui.label(format!("{:.2} s", entry.duration_ms as f64 / 1000.0));
-                                    ui.end_row();
-                                }
+                                    row.col(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.add(egui::Label::new(&entry.label).wrap());
+                                            if let Some(err) = &entry.error {
+                                                ui.add(egui::Label::new(RichText::new(err).color(p.danger).size(10.5)).wrap());
+                                            }
+                                        });
+                                    });
+                                    row.col(|ui| {
+                                        ui.weak(format!("{:.2} s", entry.duration_ms as f64 / 1000.0));
+                                    });
+                                });
                             });
-                        });
                     }
                 });
         }

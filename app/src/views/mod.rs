@@ -465,6 +465,60 @@ mod tests {
             assert!(modal_h >= 300.0, "Modal height too small for content: {modal_h}");
         }
     }
+
+    #[test]
+    fn test_operations_history_table_layout() {
+        let p = Palette::new(true, [76, 141, 255]);
+        let ctx = egui::Context::default();
+
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            ui.set_width(560.0);
+            ui.set_height(360.0);
+
+            let mock_entries = vec![
+                ("Esportazione chat HTML WhatsApp - Conversazione Famiglia e Amici 2024", 2450, true, None),
+                ("Super-risoluzione Video 4x SOTA su GPU Vulkan con pipeline Real-ESRGAN x4plus", 12340, true, None),
+                ("Esportazione messaggi iMessage - Errore critico nel parsing dell'allegato binario", 520, false, Some("Accesso negato al percorso di file temporaneo sul disco di sistema")),
+            ];
+
+            egui_extras::TableBuilder::new(ui)
+                .striped(true)
+                .resizable(true)
+                .auto_shrink([false, false])
+                .column(egui_extras::Column::exact(45.0))
+                .column(egui_extras::Column::remainder().at_least(180.0))
+                .column(egui_extras::Column::exact(85.0))
+                .header(22.0, |mut h| {
+                    h.col(|ui| { ui.weak(egui::RichText::new("ESITO").monospace().size(10.5)); });
+                    h.col(|ui| { ui.weak(egui::RichText::new("OPERAZIONE").monospace().size(10.5)); });
+                    h.col(|ui| { ui.weak(egui::RichText::new("DURATA").monospace().size(10.5)); });
+                })
+                .body(|body| {
+                    body.heterogeneous_rows(mock_entries.iter().map(|e| if e.3.is_some() { 42.0 } else { 26.0 }), |mut row| {
+                        let (label, dur, success, err) = mock_entries[row.index()];
+                        row.col(|ui| {
+                            if success {
+                                ui.colored_label(p.success, "✓");
+                            } else {
+                                ui.colored_label(p.danger, "✕");
+                            }
+                        });
+                        row.col(|ui| {
+                            ui.vertical(|ui| {
+                                ui.add(egui::Label::new(label).wrap());
+                                if let Some(err_msg) = err {
+                                    ui.add(egui::Label::new(egui::RichText::new(err_msg).color(p.danger).size(10.5)).wrap());
+                                }
+                            });
+                        });
+                        row.col(|ui| {
+                            ui.weak(format!("{:.2} s", dur as f64 / 1000.0));
+                        });
+                    });
+                });
+        });
+        out.textures_delta.clear();
+    }
 }
 
 
