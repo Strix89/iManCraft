@@ -11,41 +11,56 @@ $zipPath = "dist\IManCraft-v0.2.0-win64.zip"
 Write-Host "`n[1/4] Compilazione eseguibili in Release mode..." -ForegroundColor Yellow
 cargo build --release -p imancraft -p imancraft-cli
 
-if (-not (Test-Path "target\x86_64-pc-windows-gnu\release\imancraft.exe")) {
-    Write-Error "imancraft.exe non trovato in target\x86_64-pc-windows-gnu\release\"
-}
-if (-not (Test-Path "target\x86_64-pc-windows-gnu\release\imancraft-cli.exe")) {
-    Write-Error "imancraft-cli.exe non trovato in target\x86_64-pc-windows-gnu\release\"
+$releaseDir = "target\release"
+if (-not (Test-Path "$releaseDir\imancraft.exe")) {
+    $releaseDir = "target\x86_64-pc-windows-gnu\release"
 }
 
-Write-Host "[2/4] Preparazione cartella di distribuzione: $distDir..." -ForegroundColor Yellow
-if (Test-Path $distDir) {
-    Remove-Item -Recurse -Force $distDir
+if (-not (Test-Path "$releaseDir\imancraft.exe")) {
+    Write-Error "imancraft.exe non trovato in $releaseDir\"
 }
-New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+if (-not (Test-Path "$releaseDir\imancraft-cli.exe")) {
+    Write-Error "imancraft-cli.exe non trovato in $releaseDir\"
+}
 
-Copy-Item "target\x86_64-pc-windows-gnu\release\imancraft.exe" $distDir\
-Copy-Item "target\x86_64-pc-windows-gnu\release\imancraft-cli.exe" $distDir\
-Copy-Item "lib\sqlite3.dll" $distDir\
-Copy-Item "assets\imancraft.ico" $distDir\
-Copy-Item "LEGGIMI.txt" $distDir\
+$stageDir = "dist\package_staging"
+Write-Host "[2/4] Preparazione cartella di staging: $stageDir..." -ForegroundColor Yellow
+if (Test-Path $stageDir) {
+    Remove-Item -Recurse -Force $stageDir
+}
+New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+Copy-Item "$releaseDir\imancraft.exe" $stageDir\
+Copy-Item "$releaseDir\imancraft-cli.exe" $stageDir\
+Copy-Item "lib\sqlite3.dll" $stageDir\
+Copy-Item "assets\imancraft.ico" $stageDir\
+Copy-Item "LEGGIMI.txt" $stageDir\
 if (Test-Path "tools") {
-    Copy-Item "tools" -Destination $distDir -Recurse -Force
+    Copy-Item "tools" -Destination $stageDir -Recurse -Force
 }
 
 # Launcher rapido
 $batContent = "@start `"`" `"%~dp0imancraft.exe`""
-Set-Content -Path "$distDir\Avvia IManCraft.bat" -Value $batContent -Encoding Ascii
+Set-Content -Path "$stageDir\Avvia IManCraft.bat" -Value $batContent -Encoding Ascii
 
 Write-Host "[3/4] Creazione archivio ZIP: $zipPath..." -ForegroundColor Yellow
 if (Test-Path $zipPath) {
     Remove-Item -Force $zipPath
 }
-Compress-Archive -Path "$distDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+Compress-Archive -Path "$stageDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+
+# Tentativo di sincronizzare anche la cartella distDir scompattata (se non bloccata da un'istanza aperta)
+try {
+    if (-not (Test-Path $distDir)) {
+        Copy-Item -Path $stageDir -Destination $distDir -Recurse -Force
+    }
+} catch {
+    # File in uso da parte dell'utente, archivio ZIP comunque aggiornato
+}
 
 Write-Host "[4/4] Verifica e calcolo checksum SHA-256..." -ForegroundColor Yellow
 Write-Host "`nContenuto del pacchetto:" -ForegroundColor Green
-Get-ChildItem $distDir | ForEach-Object {
+Get-ChildItem $stageDir | ForEach-Object {
     $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
     $sizeKb = [math]::Round($_.Length / 1KB, 1)
     Write-Host ("  {0,-22} {1,10} KB  SHA256: {2}" -f $_.Name, $sizeKb, $hash)

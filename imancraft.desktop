@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=IManCraft
+Comment=Lettore ed estrattore forense per backup iOS (stile iMazing)
+Exec=imancraft %u
+Icon=imancraft
+Terminal=false
+Type=Application
+Categories=Utility;Archiving;FileManager;
+StartupWMClass=imancraft

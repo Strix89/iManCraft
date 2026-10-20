@@ -6,8 +6,13 @@ edition.workspace = true
 [lib]
 name = "imancraft_core"
 
-[dependencies]
+[target.'cfg(windows)'.dependencies]
 rusqlite = { version = "0.32", features = ["serialize"] }
+
+[target.'cfg(not(windows))'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled", "serialize"] }
+
+[dependencies]
 aes = "0.8"
 aes-gcm = "0.10"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }

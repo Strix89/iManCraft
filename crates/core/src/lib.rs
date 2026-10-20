@@ -77,12 +77,51 @@ pub fn discover(roots: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
-/// Cartelle standard di iTunes/Apple Devices.
+/// Cartelle standard di backup per iTunes, Apple Devices e libimobiledevice.
 pub fn default_roots() -> Vec<PathBuf> {
-    [("APPDATA", r"Apple Computer\MobileSync\Backup"), ("USERPROFILE", r"Apple\MobileSync\Backup")]
-        .iter()
-        .filter_map(|(var, sub)| std::env::var(var).ok().map(|b| Path::new(&b).join(sub)))
-        .collect()
+    let mut roots = Vec::new();
+
+    #[cfg(windows)]
+    {
+        for (var, sub) in [("APPDATA", r"Apple Computer\MobileSync\Backup"), ("USERPROFILE", r"Apple\MobileSync\Backup")] {
+            if let Ok(b) = std::env::var(var) {
+                let p = Path::new(&b).join(sub);
+                if p.exists() {
+                    roots.push(p);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let p = Path::new(&home).join("Library/Application Support/MobileSync/Backup");
+            if p.exists() {
+                roots.push(p);
+            }
+        }
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let p = Path::new(&home);
+            // Percorsi standard usati da libimobiledevice (idevicebackup / idevicebackup2) o cartelle importate
+            for candidate in [
+                p.join(".local/share/libimobiledevice/backup"),
+                p.join("Apple/MobileSync/Backup"),
+                p.join("MobileSync/Backup"),
+                p.join(".local/share/MobileSync/Backup"),
+            ] {
+                if candidate.exists() {
+                    roots.push(candidate);
+                }
+            }
+        }
+    }
+
+    roots
 }
 
 impl Backup {

@@ -233,13 +233,15 @@ imancraft-cli extract "C:\Backups\iPhone_00008030-001234567890002E" -o "D:\Evide
 
 | Componente | Requisito Minimo | Note di Configurazione |
 |---|---|---|
-| **Sistema Operativo** | Windows 10 / 11 a 64 bit | Architettura `x86_64` |
+| **Sistema Operativo** | Windows 10 / 11 (64 bit) o Linux (x86_64) | Architettura `x86_64` (Ubuntu 20.04+, Debian 11+, Fedora 36+, Arch Linux, ecc.) |
 | **FFmpeg & FFprobe** | Versione 6.0 o superiore (nel PATH) | Necessario per la transcodifica HEIC/HEIF e il demux video/audio |
 | **GPU con supporto Vulkan** | Driver Vulkan 1.3 compatibili | Accelerazione hardware per la Super-Risoluzione SOTA Real-ESRGAN (NVIDIA, AMD, Intel). *In assenza di GPU, l'elaborazione passa automaticamente su CPU.* |
-| **Backup iOS** | Da iTunes, Finder, Apple Devices o iMazing | Cartella con `Manifest.db`, `Info.plist` e `Status.plist` |
+| **Backup iOS** | Da iTunes, Finder, Apple Devices, iMazing o `idevicebackup2` | Cartella con `Manifest.db`, `Info.plist` e `Status.plist` |
 
-### Installazione di FFmpeg su Windows
-Qualora FFmpeg non risulti configurato nel PATH di sistema, è possibile installarlo tramite il gestore di pacchetti nativo di Windows:
+### Installazione di FFmpeg
+
+#### Su Windows
+Qualora FFmpeg non risulti configurato nel PATH di sistema, è possibile installarlo tramite il gestore di pacchetti nativo:
 
 ```powershell
 winget install Gyan.FFmpeg
@@ -247,38 +249,77 @@ winget install Gyan.FFmpeg
 
 In alternativa, estrarre i binari `ffmpeg.exe` e `ffprobe.exe` direttamente nella directory contenente l'eseguibile `imancraft.exe`.
 
+#### Su Linux
+Installare FFmpeg tramite il gestore di pacchetti della propria distribuzione:
+
+```bash
+# Ubuntu / Debian / Linux Mint
+sudo apt update && sudo apt install -y ffmpeg
+
+# Fedora / RHEL
+sudo dnf install -y ffmpeg
+
+# Arch Linux / Manjaro
+sudo pacman -S ffmpeg
+```
+
 ### Percorsi di Rilevamento Predefiniti dei Backup iOS
 IManCraft scansiona automaticamente le seguenti posizioni di sistema:
-- **Applicazione Dispositivi Apple / iTunes moderno**: `%USERPROFILE%\Apple\MobileSync\Backup`
-- **iTunes classico**: `%APPDATA%\Apple Computer\MobileSync\Backup`
-- **Directory arbitrarie**: Configurabili da menu (`File -> Aggiungi cartella di backup...` o `Ctrl + O`).
+- **Windows (Apple Devices / iTunes moderno)**: `%USERPROFILE%\Apple\MobileSync\Backup`
+- **Windows (iTunes classico)**: `%APPDATA%\Apple Computer\MobileSync\Backup`
+- **Linux (`libimobiledevice` / `idevicebackup2`)**: `~/.local/share/libimobiledevice/backup`
+- **Linux (Cartelle sincronizzate / importate)**: `~/Apple/MobileSync/Backup` e `~/MobileSync/Backup`
+- **macOS**: `~/Library/Application Support/MobileSync/Backup`
+- **Directory arbitrarie**: Configurabili da menu (`File -> Aggiungi cartella di backup...` o `Ctrl + O`) o specificando il percorso come argomento da riga di comando.
 
 ---
 
 ## Compilazione dai Sorgenti
 
 ### Prerequisiti di Build
-- Toolchain Rust `stable-x86_64-pc-windows-gnu`.
+
+#### Su Windows
+- Toolchain Rust `stable-x86_64-pc-windows-gnu` (o MSVC).
 - Linker `rust-lld` (configurato in `.cargo/config.toml`).
 - Libreria di importazione SQLite: il repository include `lib/sqlite3.dll` e la relativa import library `lib/libsqlite3.dll.a`. La build script di Cargo copia automaticamente le librerie nei percorsi target.
+
+#### Su Linux
+Installare la toolchain Rust e i pacchetti di sviluppo per audio (ALSA) e finestre grafiche (X11 / Wayland):
+
+```bash
+# Ubuntu / Debian
+sudo apt update && sudo apt install -y build-essential libasound2-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libvulkan-dev pkg-config
+
+# Fedora
+sudo dnf install -y gcc gcc-c++ alsa-lib-devel libX11-devel libXcursor-devel libXrandr-devel libXi-devel libxkbcommon-devel vulkan-loader-devel pkgconf-pkg-config
+
+# Arch Linux
+sudo pacman -S --needed base-devel alsa-lib libx11 libxcursor libxrandr libxi libxkbcommon vulkan-icd-loader
+```
+
+*Nota su SQLite per Linux*: Su sistemi Linux non-Windows, `imancraft-core` compila automaticamente SQLite internamente in modalità `bundled` con estensioni `serialize`/`deserialize` attivate, eliminando qualsiasi vincolo di versione sulle librerie di sistema.
 
 ### Procedura di Compilazione
 
 ```bash
 # 1. Clonazione del repository
-git clone https://github.com/SuicideBoy/iManCraft.git
+git clone https://github.com/Strix89/iManCraft.git
 cd iManCraft
 
-# 2. Esecuzione della suite di test automatizzati (39 test unitari e di integrazione)
+# 2. Esecuzione della suite completa di test (42 test unitari e di integrazione)
 cargo test --workspace
 
 # 3. Compilazione ottimizzata in modalità Release
-cargo build --release --workspace
+cargo build --release -p imancraft -p imancraft-cli
 ```
 
 Gli eseguibili compilati saranno generati in:
-- `target/x86_64-pc-windows-gnu/release/imancraft.exe` (Applicazione Desktop)
-- `target/x86_64-pc-windows-gnu/release/imancraft-cli.exe` (Interfaccia CLI)
+- `target/release/imancraft` (Applicazione Desktop GUI)
+- `target/release/imancraft-cli` (Interfaccia CLI per terminale e server)
+
+### Script di Packaging Automatizzato
+- **Per Windows**: eseguire `.\package.ps1` per generare il pacchetto compresso `dist/IManCraft-v0.2.0-win64.zip`.
+- **Per Linux**: eseguire `./package.sh` per generare il pacchetto compresso `dist/IManCraft-v0.2.0-linux-x86_64.tar.gz` comprensivo di file desktop (`imancraft.desktop`) e icona di sistema.
 
 ---
 

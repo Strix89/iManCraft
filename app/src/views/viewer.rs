@@ -292,6 +292,20 @@ impl Viewer {
                                         c.creation_flags(0x08000000);
                                         let _ = c.spawn();
                                     }
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        let mut c = std::process::Command::new("open");
+                                        c.args(["-R", p_clone.to_str().unwrap_or("")]);
+                                        let _ = c.spawn();
+                                    }
+                                    #[cfg(not(any(windows, target_os = "macos")))]
+                                    {
+                                        if let Some(parent) = p_clone.parent() {
+                                            let mut c = std::process::Command::new("xdg-open");
+                                            c.arg(parent);
+                                            let _ = c.spawn();
+                                        }
+                                    }
                                 }
                                 let p_clone2 = path.clone();
                                 if ui.button("▶ Apri").on_hover_text("Riproduci il video 4× migliorato nel lettore di sistema").clicked() {
@@ -301,6 +315,18 @@ impl Viewer {
                                         let mut c = std::process::Command::new("cmd");
                                         c.args(["/c", "start", "", p_clone2.to_str().unwrap_or("")]);
                                         c.creation_flags(0x08000000);
+                                        let _ = c.spawn();
+                                    }
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        let mut c = std::process::Command::new("open");
+                                        c.arg(p_clone2.to_str().unwrap_or(""));
+                                        let _ = c.spawn();
+                                    }
+                                    #[cfg(not(any(windows, target_os = "macos")))]
+                                    {
+                                        let mut c = std::process::Command::new("xdg-open");
+                                        c.arg(p_clone2.to_str().unwrap_or(""));
                                         let _ = c.spawn();
                                     }
                                 }

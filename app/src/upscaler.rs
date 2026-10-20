@@ -55,11 +55,38 @@ fn detect_gpu() -> GpuInfo {
         }
     }
 
+    #[cfg(not(windows))]
+    {
+        // Query via lspci su Linux
+        if let Ok(out) = Command::new("lspci").output() {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                for line in stdout.lines() {
+                    let lower = line.to_lowercase();
+                    if lower.contains("vga compatible controller") || lower.contains("3d controller") {
+                        if let Some((_, dev)) = line.split_once(": ") {
+                            name = dev.trim().to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if name.is_empty() {
         name = "GPU Dedicata / Integrata".to_string();
     }
 
+    #[cfg(windows)]
     let has_vulkan = Path::new(r"C:\Windows\System32\vulkan-1.dll").exists();
+
+    #[cfg(not(windows))]
+    let has_vulkan = Path::new("/usr/lib/libvulkan.so.1").exists()
+        || Path::new("/usr/lib/x86_64-linux-gnu/libvulkan.so.1").exists()
+        || Path::new("/usr/lib64/libvulkan.so.1").exists()
+        || Command::new("which").arg("vulkaninfo").output().map(|o| o.status.success()).unwrap_or(false);
+
     let lower = name.to_lowercase();
     let is_nvidia = lower.contains("nvidia") || lower.contains("geforce") || lower.contains("rtx") || lower.contains("gtx");
     let is_amd = lower.contains("amd") || lower.contains("radeon");
@@ -90,9 +117,14 @@ pub fn clean_path(p: &Path) -> PathBuf {
 
 /// Cerca l'eseguibile di Real-ESRGAN Vulkan nella directory dell'app, in tools o nel PATH.
 pub fn find_neural_engine() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let binary_name = "realesrgan-ncnn-vulkan.exe";
+    #[cfg(not(windows))]
+    let binary_name = "realesrgan-ncnn-vulkan";
+
     let candidates = [
-        PathBuf::from(r"tools\upscaler\realesrgan-ncnn-vulkan.exe"),
-        PathBuf::from(r".\realesrgan-ncnn-vulkan.exe"),
+        PathBuf::from(format!("tools/upscaler/{binary_name}")),
+        PathBuf::from(binary_name),
     ];
 
     for c in &candidates {
@@ -104,11 +136,11 @@ pub fn find_neural_engine() -> Option<PathBuf> {
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let p1 = dir.join(r"tools\upscaler\realesrgan-ncnn-vulkan.exe");
+            let p1 = dir.join(format!("tools/upscaler/{binary_name}"));
             if p1.exists() {
                 return Some(clean_path(&p1));
             }
-            let p2 = dir.join("realesrgan-ncnn-vulkan.exe");
+            let p2 = dir.join(binary_name);
             if p2.exists() {
                 return Some(clean_path(&p2));
             }
@@ -122,6 +154,21 @@ pub fn find_neural_engine() -> Option<PathBuf> {
         cmd.arg("realesrgan-ncnn-vulkan");
         cmd.creation_flags(0x08000000);
         if let Ok(out) = cmd.output() {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                if let Some(first) = stdout.lines().next() {
+                    let p = PathBuf::from(first.trim());
+                    if p.exists() {
+                        return Some(clean_path(&p));
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        if let Ok(out) = Command::new("which").arg("realesrgan-ncnn-vulkan").output() {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 if let Some(first) = stdout.lines().next() {
