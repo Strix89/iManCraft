@@ -23,6 +23,7 @@ Progettato interamente in Rust con interfaccia grafica vettoriale nativa basata 
 - [Requisiti di Sistema](#requisiti-di-sistema)
 - [Compilazione dai Sorgenti](#compilazione-dai-sorgenti)
 - [Scorciatoie da Tastiera](#scorciatoie-da-tastiera)
+- [Roadmap e Sviluppi Futuri](#roadmap-e-sviluppi-futuri)
 - [Struttura del Repository](#struttura-del-repository)
 - [Licenza e Disclaimer Legale](#licenza-e-disclaimer-legale)
 
@@ -337,6 +338,19 @@ Gli eseguibili compilati saranno generati in:
 | `Esc` | Visualizzatore | Chiudi il visualizzatore a schermo intero o il modale attivo |
 | `Freccia Sinistra / Destra` | Visualizzatore | Naviga all'elemento multimediale precedente / successivo |
 | `Spazio` | Player | Avvia / Metti in pausa la riproduzione video o audio vocale |
+
+---
+
+## Roadmap e Sviluppi Futuri
+
+Le seguenti funzionalità rappresentano le direttrici evolutive pianificate per le prossime versioni del progetto:
+
+- **Modulo Dati Sanitari (Apple Health)**: Estrazione, aggregazione e rappresentazione grafica/tabellare dei dati biometrici e di attività registrati in `healthdb.sqlite` e `healthdb_secure.sqlite` (conteggio passi, frequenza cardiaca, monitoraggio del sonno, tracciamento GPS delle sessioni di allenamento).
+- **Estensione Forense per Ulteriori App di Messaggistica**: Supporto strutturato all'ispezione dei database locali di Signal (`group.org.whispersystems.signal`), WeChat e Viber.
+- **Rifiniture Avanzate WhatsApp**: Decodifica puntuale delle reazioni con emoji memorizzate nei metadati (`ZWAMESSAGEINFO.ZRECEIPTINFO`), parsing dei sondaggi interattivi e gestione dei messaggi effimeri con timer di distruzione.
+- **Evoluzione Player Video Nativo**: Implementazione del tone-mapping dinamico da HDR (Apple HLG / Dolby Vision) a SDR per prevenire la desaturazione dei colori su display standard, con sincronizzazione audio/video avanzata sub-frame.
+- **Cache Persistente delle Miniature su Disco**: Indicizzazione locale permanente delle miniature per garantire caricamento istantaneo su librerie fotografiche di grandi dimensioni (oltre 50.000 elementi).
+- **Integrazione Dispositivi Live via USB (Opzionale)**: Supporto sperimentale alla comunicazione con dispositivi collegati dal vivo tramite stack `usbmuxd` / `libimobiledevice` su Linux o Apple Mobile Device Service su Windows, per l'acquisizione di backup autonomi.
 
 ---
 
