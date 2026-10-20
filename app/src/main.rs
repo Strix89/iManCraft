@@ -189,10 +189,19 @@ impl App {
                             self.settings.accent = [c.r(), c.g(), c.b()];
                         }
                         ui.add_space(8.0);
-                        // selettore del backup attivo
-                        let name = self.current.and_then(|i| self.backups.get(i)).map(|b| format!("📱 {} · {}", b.summary.name, b.summary.model)).unwrap_or_else(|| "Nessun backup".into());
+                        // selettore del backup attivo responsive
+                        let avail_for_combo = ui.available_width();
+                        let combo_w = (avail_for_combo * 0.45).clamp(160.0, 300.0);
+                        let name = self.current.and_then(|i| self.backups.get(i)).map(|b| {
+                            let full = format!("📱 {} · {}", b.summary.name, b.summary.model);
+                            if combo_w < 220.0 {
+                                views::short(&full, (combo_w / 9.0) as usize)
+                            } else {
+                                full
+                            }
+                        }).unwrap_or_else(|| "Nessun backup".into());
                         let mut pick = None;
-                        egui::ComboBox::from_id_salt("backup-pick").selected_text(name).width(300.0).show_ui(ui, |ui| {
+                        egui::ComboBox::from_id_salt("backup-pick").selected_text(name).width(combo_w).show_ui(ui, |ui| {
                             for (i, b) in self.backups.iter().enumerate() {
                                 let lock = if b.encrypted { if b.is_locked() { " 🔒" } else { " 🔓" } } else { "" };
                                 if ui.selectable_label(self.current == Some(i), format!("{} · {} · iOS {}{lock}", b.summary.name, b.summary.model, b.summary.ios)).clicked() {

@@ -213,7 +213,8 @@ impl Viewer {
             ui.scope_builder(egui::UiBuilder::new().max_rect(top.shrink2(Vec2::new(14.0, 8.0))), |ui| {
                 ui.horizontal(|ui| {
                     ui.visuals_mut().override_text_color = Some(Color32::from_gray(235));
-                    ui.label(RichText::new(&it.name).strong());
+                    let max_name_len = (ui.available_width() / 25.0).clamp(14.0, 36.0) as usize;
+                    ui.label(RichText::new(super::short(&it.name, max_name_len)).strong());
                     ui.label(format!("{}/{}", self.i + 1, self.items.len()));
                     if it.t > 0.0 {
                         ui.label(fmt_date(it.t));
@@ -305,9 +306,9 @@ impl Viewer {
                                 }
                             } else {
                                 let label = if GPU.is_gpu_acceleration_available() {
-                                    "✨ Migliora Video con AI (SOTA 4× MP4)…"
+                                    if ui.available_width() < 700.0 { "✨ Migliora AI Video" } else { "✨ Migliora Video con AI (SOTA 4× MP4)…" }
                                 } else {
-                                    "✨ Migliora Video (4× MP4)…"
+                                    if ui.available_width() < 700.0 { "✨ Migliora Video" } else { "✨ Migliora Video (4× MP4)…" }
                                 };
                                 if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
                                     self.show_ai_modal = true;
@@ -315,11 +316,11 @@ impl Viewer {
                             }
                         } else {
                             let label = if it.cloud || it.id.is_none() {
-                                "✨ Restaura Anteprima iCloud (AI)…"
+                                if ui.available_width() < 700.0 { "✨ Restaura iCloud" } else { "✨ Restaura Anteprima iCloud (AI)…" }
                             } else if GPU.is_gpu_acceleration_available() {
-                                "✨ Migliora con AI (GPU 4× / 8×)…"
+                                if ui.available_width() < 700.0 { "✨ Migliora AI" } else { "✨ Migliora con AI (GPU 4× / 8×)…" }
                             } else {
-                                "✨ Migliora Risoluzione (4× / 8×)…"
+                                if ui.available_width() < 700.0 { "✨ Migliora" } else { "✨ Migliora Risoluzione (4× / 8×)…" }
                             };
                             if ui.add_enabled(!busy, egui::Button::new(label)).clicked() {
                                 self.show_ai_modal = true;
@@ -450,9 +451,9 @@ impl Viewer {
             // Modal di configurazione e avvio restauro AI
             if self.show_ai_modal {
                 if it.video && it.id.is_some() {
-                    // Modal dedicato alla super-risoluzione video SOTA 4×
-                    let modal_w = 560.0;
-                    let modal_h = 450.0;
+                    // Modal dedicato alla super-risoluzione video SOTA 4× responsive
+                    let modal_w = (screen.width() - 32.0).clamp(320.0, 560.0);
+                    let modal_h = (screen.height() - 40.0).clamp(300.0, 480.0);
                     let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                     ui.interact(screen, ui.make_persistent_id("ai-video-modal-bg"), egui::Sense::click());
@@ -461,98 +462,101 @@ impl Viewer {
                     ui.painter().rect_stroke(modal_rect, 6.0, Stroke::new(1.5, p.accent), egui::StrokeKind::Outside);
 
                     ui.scope_builder(egui::UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
-                        ui.vertical(|ui| {
-                            theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE NEURALE VIDEO SOTA");
-                            ui.add_space(4.0);
-                            ui.label(RichText::new("✨ Super-Risoluzione Video 4× (MP4)").size(16.0).strong().color(p.text));
-                            ui.add_space(4.0);
-                            ui.label(RichText::new(format!("Pipeline neurale fotogramma per fotogramma con Real-ESRGAN Vulkan e ricodifica H.264 per '{}'.", it.name)).size(11.5).color(p.muted));
-                            ui.add_space(8.0);
+                        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                theme::section_label(ui, p, "01 / SUPER-RISOLUZIONE NEURALE VIDEO SOTA");
+                                ui.add_space(4.0);
+                                ui.label(RichText::new("✨ Super-Risoluzione Video 4× (MP4)").size(16.0).strong().color(p.text));
+                                ui.add_space(4.0);
+                                ui.label(RichText::new(format!("Pipeline neurale fotogramma per fotogramma con Real-ESRGAN Vulkan e ricodifica H.264 per '{}'.", it.name)).size(11.5).color(p.muted));
+                                ui.add_space(8.0);
 
-                            // Hardware & Accelerazione
-                            egui::Frame::new()
-                                .fill(p.panel_alt)
-                                .stroke(Stroke::new(1.0, p.line))
-                                .corner_radius(egui::CornerRadius::same(4))
-                                .inner_margin(egui::Margin::same(10))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        theme::chip(ui, "GPU ACCELERATA", p.success);
-                                        ui.label(RichText::new(format!("GPU: {}", GPU.name)).strong().color(p.text));
+                                // Hardware & Accelerazione
+                                egui::Frame::new()
+                                    .fill(p.panel_alt)
+                                    .stroke(Stroke::new(1.0, p.line))
+                                    .corner_radius(egui::CornerRadius::same(4))
+                                    .inner_margin(egui::Margin::same(10))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            theme::chip(ui, "GPU ACCELERATA", p.success);
+                                            ui.label(RichText::new(format!("GPU: {}", GPU.name)).strong().color(p.text));
+                                        });
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new("⚡ Elaborazione su GPU Vulkan con Contrast-Adaptive Sharpening (CAS), ricodifica hardware NVENC e traccia audio AAC sincronizzata.").small().color(p.muted));
                                     });
-                                    ui.add_space(4.0);
-                                    ui.label(RichText::new("⚡ Elaborazione su GPU Vulkan con Contrast-Adaptive Sharpening (CAS), ricodifica hardware NVENC e traccia audio AAC sincronizzata.").small().color(p.muted));
-                                });
 
-                            ui.add_space(8.0);
-                            theme::section_label(ui, p, "02 / SPECIFICHE TECNICHE E RISOLUZIONE TARGET");
-                            ui.add_space(4.0);
+                                ui.add_space(8.0);
+                                theme::section_label(ui, p, "02 / SPECIFICHE TECNICHE E RISOLUZIONE TARGET");
+                                ui.add_space(4.0);
 
-                            let (src_w, src_h) = if let Some((_, player)) = &self.player {
-                                if player.probe.width > 0 && player.probe.height > 0 {
-                                    (player.probe.width as i64, player.probe.height as i64)
+                                let (src_w, src_h) = if let Some((_, player)) = &self.player {
+                                    if player.probe.width > 0 && player.probe.height > 0 {
+                                        (player.probe.width as i64, player.probe.height as i64)
+                                    } else {
+                                        (it.w, it.h)
+                                    }
                                 } else {
                                     (it.w, it.h)
-                                }
-                            } else {
-                                (it.w, it.h)
-                            };
-                            let tgt_w = if src_w > 0 { src_w * 4 } else { 1920 };
-                            let tgt_h = if src_h > 0 { src_h * 4 } else { 1920 };
+                                };
+                                let tgt_w = if src_w > 0 { src_w * 4 } else { 1920 };
+                                let tgt_h = if src_h > 0 { src_h * 4 } else { 1920 };
 
-                            egui::Frame::new()
-                                .fill(p.panel_alt)
-                                .stroke(Stroke::new(1.0, p.line))
-                                .corner_radius(egui::CornerRadius::same(4))
-                                .inner_margin(egui::Margin::same(8))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.label(RichText::new("Risoluzione sorgente:").small().color(p.muted));
-                                        ui.label(RichText::new(if src_w > 0 { format!("{}×{}", src_w, src_h) } else { "480×480 (SD)".to_string() }).strong().small().color(p.text));
-                                        ui.label(RichText::new("➔ Target 4×:").small().color(p.accent));
-                                        ui.label(RichText::new(format!("{}×{} (Full HD)", tgt_w, tgt_h)).strong().small().color(p.accent));
+                                egui::Frame::new()
+                                    .fill(p.panel_alt)
+                                    .stroke(Stroke::new(1.0, p.line))
+                                    .corner_radius(egui::CornerRadius::same(4))
+                                    .inner_margin(egui::Margin::same(8))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Risoluzione sorgente:").small().color(p.muted));
+                                            ui.label(RichText::new(if src_w > 0 { format!("{}×{}", src_w, src_h) } else { "480×480 (SD)".to_string() }).strong().small().color(p.text));
+                                            ui.label(RichText::new("➔ Target 4×:").small().color(p.accent));
+                                            ui.label(RichText::new(format!("{}×{} (Full HD)", tgt_w, tgt_h)).strong().small().color(p.accent));
+                                        });
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new("• Algoritmo: Real-ESRGAN x4plus neurale su GPU Vulkan (tiling VRAM 256)").small().color(p.muted));
+                                        ui.label(RichText::new("• Nitidezza: Contrast-Adaptive Sharpening (AMD CAS a 0.5)").small().color(p.muted));
+                                        ui.label(RichText::new("• Audio: Estrazione e rimuxing sincronizzato senza perdita (AAC)").small().color(p.muted));
+                                        ui.label(RichText::new("• Formato output: MP4 H.264 (NVENC hardware / CRF 18 alta qualità)").small().color(p.muted));
                                     });
-                                    ui.add_space(4.0);
-                                    ui.label(RichText::new("• Algoritmo: Real-ESRGAN x4plus neurale su GPU Vulkan (tiling VRAM 256)").small().color(p.muted));
-                                    ui.label(RichText::new("• Nitidezza: Contrast-Adaptive Sharpening (AMD CAS a 0.5)").small().color(p.muted));
-                                    ui.label(RichText::new("• Audio: Estrazione e rimuxing sincronizzato senza perdita (AAC)").small().color(p.muted));
-                                    ui.label(RichText::new("• Formato output: MP4 H.264 (NVENC hardware / CRF 18 alta qualità)").small().color(p.muted));
-                                });
 
-                            ui.add_space(12.0);
-                            ui.horizontal(|ui| {
-                                let action_label = "⚡ Avvia Super-Risoluzione Video (4× MP4)…";
-                                if theme::primary(ui, p, action_label).clicked() {
-                                    let base = it.name.rsplit_once('.').map_or(it.name.as_str(), |x| x.0);
-                                    if let Some(dest) = save_dialog(&format!("{base}-AI-4x.mp4")) {
-                                        self.show_ai_modal = false;
-                                        self.upscaler_err = None;
-                                        let src_url = media::url(media::register(&it.backup), it.id.as_deref().unwrap());
-                                        self.video_upscaling = Some(tasks::run(ui.ctx(), "Super-risoluzione Video 4× SOTA", move || {
-                                            upscaler::upscale_video_pipeline(&src_url, &dest, 4)
-                                        }));
+                                ui.add_space(12.0);
+                                ui.horizontal(|ui| {
+                                    let action_label = "⚡ Avvia Super-Risoluzione Video (4× MP4)…";
+                                    if theme::primary(ui, p, action_label).clicked() {
+                                        let base = it.name.rsplit_once('.').map_or(it.name.as_str(), |x| x.0);
+                                        if let Some(dest) = save_dialog(&format!("{base}-AI-4x.mp4")) {
+                                            self.show_ai_modal = false;
+                                            self.upscaler_err = None;
+                                            let src_url = media::url(media::register(&it.backup), it.id.as_deref().unwrap());
+                                            self.video_upscaling = Some(tasks::run(ui.ctx(), "Super-risoluzione Video 4× SOTA", move || {
+                                                upscaler::upscale_video_pipeline(&src_url, &dest, 4)
+                                            }));
+                                        }
                                     }
-                                }
 
-                                if ui.button("✕ Annulla").clicked() {
-                                    self.show_ai_modal = false;
-                                }
+                                    if ui.button("✕ Annulla").clicked() {
+                                        self.show_ai_modal = false;
+                                    }
+                                });
                             });
                         });
                     });
                 } else {
-                let modal_w = 540.0;
-                let modal_h = 440.0;
-                let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
+                    let modal_w = (screen.width() - 32.0).clamp(320.0, 560.0);
+                    let modal_h = (screen.height() - 40.0).clamp(300.0, 480.0);
+                    let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
-                // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
-                ui.interact(screen, ui.make_persistent_id("ai-modal-bg"), egui::Sense::click());
-                ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(190));
-                ui.painter().rect_filled(modal_rect, 6.0, p.panel);
-                ui.painter().rect_stroke(modal_rect, 6.0, Stroke::new(1.5, p.accent), egui::StrokeKind::Outside);
+                    // Intercetta clic sullo sfondo per non trascinare l'immagine dietro
+                    ui.interact(screen, ui.make_persistent_id("ai-modal-bg"), egui::Sense::click());
+                    ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(190));
+                    ui.painter().rect_filled(modal_rect, 6.0, p.panel);
+                    ui.painter().rect_stroke(modal_rect, 6.0, Stroke::new(1.5, p.accent), egui::StrokeKind::Outside);
 
-                ui.scope_builder(egui::UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
-                    ui.vertical(|ui| {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(modal_rect.shrink(18.0)), |ui| {
+                        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+                            ui.vertical(|ui| {
                         theme::section_label(ui, p, "01 / RESTAURO & SUPER-RISOLUZIONE AI LOCALE");
                         ui.add_space(4.0);
                         let header_title = if it.cloud || it.id.is_none() {
@@ -725,17 +729,18 @@ impl Viewer {
                         });
                     });
                 });
-                }
+            });
             }
+        }
 
-            // Dialog Modale ArtCraft durante l'elaborazione AI (video o immagine)
-            let is_video_busy = self.video_upscaling.is_some();
-            let is_image_busy = self.upscaling.is_some();
-            if is_video_busy || is_image_busy {
-                ctx.request_repaint(); // animazione fluida continua
-                let modal_w = 480.0;
-                let modal_h = 240.0;
-                let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
+        // Dialog Modale ArtCraft durante l'elaborazione AI (video o immagine)
+        let is_video_busy = self.video_upscaling.is_some();
+        let is_image_busy = self.upscaling.is_some();
+        if is_video_busy || is_image_busy {
+            ctx.request_repaint(); // animazione fluida continua
+            let modal_w = (screen.width() - 32.0).clamp(280.0, 480.0);
+            let modal_h = (screen.height() - 32.0).clamp(180.0, 240.0);
+            let modal_rect = egui::Rect::from_center_size(screen.center(), Vec2::new(modal_w, modal_h));
 
                 ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(180));
                 ui.painter().rect_filled(modal_rect, 6.0, p.panel);

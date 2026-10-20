@@ -169,7 +169,8 @@ pub fn unlock_box(ui: &mut egui::Ui, p: &Palette, b: &Arc<Backup>, st: &mut Stat
         ui.label(RichText::new("🔒 Backup cifrato").strong().size(16.0));
         ui.label("Inserisci la password impostata in iTunes, Finder o iMazing per questo backup. Le chiavi restano solo in memoria finché l'app è aperta.");
         let busy = st.unlocking.as_ref().is_some_and(|t| t.ready().is_none());
-        let resp = ui.add_enabled(!busy, egui::TextEdit::singleline(&mut st.pw).password(true).hint_text("Password del backup").desired_width(300.0));
+        let pw_w = (ui.available_width() - 8.0).clamp(180.0, 320.0);
+        let resp = ui.add_enabled(!busy, egui::TextEdit::singleline(&mut st.pw).password(true).hint_text("Password del backup").desired_width(pw_w));
         let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         ui.horizontal(|ui| {
             if (ui.add_enabled_ui(!busy && !st.pw.is_empty(), |ui| theme::primary(ui, p, "Sblocca")).inner.clicked() || enter) && !st.pw.is_empty() {

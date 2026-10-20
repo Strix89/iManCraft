@@ -87,7 +87,7 @@ impl State {
         let set: Option<std::collections::HashSet<i64>> = self.album.and_then(|i| albums.get(i)).map(|a| a.pks.iter().copied().collect());
         let list: Vec<&Photo> = items.iter().filter(|p| keep(self.filter, p) && set.as_ref().is_none_or(|s| s.contains(&p.pk))).collect();
         let nc = list.iter().filter(|p| p.cloud).count();
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.weak(format!(
                 "{} elementi{} · clic per aprire, ← → per scorrere",
                 list.len(),

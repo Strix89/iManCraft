@@ -72,27 +72,32 @@ impl State {
             ui.colored_label(env.p.danger, format!("⚠ {e}"));
         }
 
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(&self.sel_title).strong().size(15.0));
+        ui.horizontal_wrapped(|ui| {
+            let max_title_chars = (ui.available_width() / 12.0).clamp(16.0, 60.0) as usize;
+            ui.label(RichText::new(super::short(&self.sel_title, max_title_chars)).strong().size(15.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("⬇ HTML (Stampa/PDF)").on_hover_text("Esporta la conversazione in formato HTML pronto da aprire e stampare in PDF").clicked() {
-                    let title = if self.sel_title.is_empty() { "Messaggi".to_string() } else { self.sel_title.clone() };
-                    if let Some(dest) = super::save_dialog(&format!("iMessage - {title}.html")) {
-                        let msgs_clone = msgs.clone();
-                        self.export = Some(tasks::run(ui.ctx(), "Esportazione messaggi HTML", move || {
-                            imancraft_core::export::export_messages_html(&title, &msgs_clone, &dest).map_err(|e| e.to_string())
-                        }));
+                ui.menu_button("⬇ Esporta", |ui| {
+                    if ui.button("HTML (Stampa / PDF)").on_hover_text("Esporta la conversazione in formato HTML pronto da aprire e stampare in PDF").clicked() {
+                        let title = if self.sel_title.is_empty() { "Messaggi".to_string() } else { self.sel_title.clone() };
+                        if let Some(dest) = super::save_dialog(&format!("iMessage - {title}.html")) {
+                            let msgs_clone = msgs.clone();
+                            self.export = Some(tasks::run(ui.ctx(), "Esportazione messaggi HTML", move || {
+                                imancraft_core::export::export_messages_html(&title, &msgs_clone, &dest).map_err(|e| e.to_string())
+                            }));
+                            ui.close();
+                        }
                     }
-                }
-                if ui.button("⬇ XLSX (Excel)").on_hover_text("Esporta la conversazione in formato Excel").clicked() {
-                    let title = if self.sel_title.is_empty() { "Messaggi".to_string() } else { self.sel_title.clone() };
-                    if let Some(dest) = super::save_dialog(&format!("iMessage - {title}.xlsx")) {
-                        let msgs_clone = msgs.clone();
-                        self.export = Some(tasks::run(ui.ctx(), "Esportazione messaggi Excel", move || {
-                            imancraft_core::export::export_messages_xlsx(&title, &msgs_clone, &dest).map_err(|e| e.to_string())
-                        }));
+                    if ui.button("XLSX (Excel)").on_hover_text("Esporta la conversazione in formato Excel").clicked() {
+                        let title = if self.sel_title.is_empty() { "Messaggi".to_string() } else { self.sel_title.clone() };
+                        if let Some(dest) = super::save_dialog(&format!("iMessage - {title}.xlsx")) {
+                            let msgs_clone = msgs.clone();
+                            self.export = Some(tasks::run(ui.ctx(), "Esportazione messaggi Excel", move || {
+                                imancraft_core::export::export_messages_xlsx(&title, &msgs_clone, &dest).map_err(|e| e.to_string())
+                            }));
+                            ui.close();
+                        }
                     }
-                }
+                });
             });
         });
         ui.separator();

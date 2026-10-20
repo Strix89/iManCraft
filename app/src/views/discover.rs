@@ -24,7 +24,7 @@ impl State {
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
                         ui.label(RichText::new(&b.summary.name).strong().size(20.0));
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new(&b.summary.model).strong());
                             ui.weak("·");
                             ui.weak(format!("iOS {}", b.summary.ios));
@@ -36,7 +36,7 @@ impl State {
                             }
                         });
                         ui.add_space(4.0);
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             if b.encrypted {
                                 theme::chip(ui, if b.is_locked() { "cifrato" } else { "sbloccato" }, if b.is_locked() { p.danger } else { p.success });
                             } else {

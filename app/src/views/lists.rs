@@ -80,7 +80,7 @@ impl State {
         }
         let Some(list) = tasks::show(ui, self.contacts.as_ref()) else { return };
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             filter_box(ui, &mut self.filter, &format!("Cerca tra {} contatti…", list.len()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⬇ XLSX (Excel)").on_hover_text("Esporta contatti in foglio Excel").clicked() {
@@ -114,8 +114,8 @@ impl State {
         TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
-            .column(Column::initial(260.0))
-            .column(Column::initial(260.0))
+            .column(Column::initial(180.0))
+            .column(Column::initial(180.0))
             .column(Column::remainder())
             .header(22.0, |h| head(&["NOME", "TELEFONO", "EMAIL"], h))
             .body(|body| {
@@ -514,7 +514,7 @@ impl State {
         }
         let Some(list) = tasks::show(ui, self.calls.as_ref()) else { return };
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             filter_box(ui, &mut self.filter, &format!("Cerca tra {} chiamate…", list.len()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⬇ XLSX (Excel)").on_hover_text("Esporta registro chiamate in Excel").clicked() {
@@ -534,10 +534,11 @@ impl State {
         let p = *env.p;
         TableBuilder::new(ui)
             .striped(true)
+            .resizable(true)
             .column(Column::exact(28.0))
-            .column(Column::initial(280.0))
             .column(Column::initial(200.0))
-            .column(Column::initial(150.0))
+            .column(Column::initial(140.0))
+            .column(Column::initial(120.0))
             .column(Column::remainder())
             .header(22.0, |h| head(&["", "CONTATTO", "TIPO", "DATA", "DURATA"], h))
             .body(|body| {
@@ -654,7 +655,7 @@ impl State {
         }
         let Some(list) = tasks::show(ui, self.calendars.as_ref()) else { return };
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             filter_box(ui, &mut self.filter, &format!("Cerca tra {} eventi…", list.len()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⬇ XLSX (Excel)").on_hover_text("Esporta calendario in Excel").clicked() {
@@ -687,9 +688,10 @@ impl State {
 
         TableBuilder::new(ui)
             .striped(true)
-            .column(Column::initial(180.0))
-            .column(Column::initial(260.0))
-            .column(Column::initial(160.0))
+            .resizable(true)
+            .column(Column::initial(150.0))
+            .column(Column::initial(200.0))
+            .column(Column::initial(130.0))
             .column(Column::remainder())
             .header(22.0, |h| head(&["DATA E ORA", "TITOLO EVENTO", "CALENDARIO", "LUOGO / NOTE"], h))
             .body(|body| {
@@ -742,8 +744,9 @@ impl State {
 
             TableBuilder::new(ui)
                 .striped(true)
-                .column(Column::initial(160.0))
-                .column(Column::initial(220.0))
+                .resizable(true)
+                .column(Column::initial(140.0))
+                .column(Column::initial(180.0))
                 .column(Column::exact(100.0))
                 .column(Column::remainder())
                 .header(22.0, |h| head(&["DATA", "MITTENTE", "DURATA", "AUDIO"], h))
@@ -781,8 +784,9 @@ impl State {
 
             TableBuilder::new(ui)
                 .striped(true)
-                .column(Column::initial(160.0))
-                .column(Column::initial(300.0))
+                .resizable(true)
+                .column(Column::initial(140.0))
+                .column(Column::initial(220.0))
                 .column(Column::exact(100.0))
                 .column(Column::remainder())
                 .header(22.0, |h| head(&["DATA", "TITOLO REGISTRAZIONE", "DURATA", "AUDIO"], h))
@@ -892,7 +896,7 @@ impl State {
         }
         let Some(list) = tasks::show(ui, self.reminders.as_ref()) else { return };
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             filter_box(ui, &mut self.filter, &format!("Cerca tra {} promemoria…", list.len()));
             ui.add_space(8.0);
             for (idx, label) in ["Tutti", "Da completare", "Completati"].iter().enumerate() {
@@ -926,11 +930,12 @@ impl State {
 
         TableBuilder::new(ui)
             .striped(true)
-            .column(Column::exact(36.0))
-            .column(Column::initial(300.0))
-            .column(Column::initial(150.0))
-            .column(Column::initial(150.0))
-            .column(Column::initial(90.0))
+            .resizable(true)
+            .column(Column::exact(32.0))
+            .column(Column::initial(200.0))
+            .column(Column::initial(110.0))
+            .column(Column::initial(110.0))
+            .column(Column::initial(80.0))
             .column(Column::remainder())
             .header(22.0, |h| head(&["STATO", "TITOLO", "ELENCO", "SCADENZA", "PRIORITÀ", "NOTE"], h))
             .body(|body| {

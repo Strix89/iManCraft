@@ -502,47 +502,18 @@ impl State {
         let Some(chat) = chat else { return };
         let end = backup_end(env);
         let p = *env.p;
-        // intestazione
-        ui.horizontal(|ui| {
+        // intestazione responsive
+        ui.horizontal_wrapped(|ui| {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(42.0), Sense::hover());
             avatar(ui, env, &chat, rect);
             ui.vertical(|ui| {
-                theme::title(ui, &short(&chat.title, 60));
+                let max_title_len = (ui.available_width() / 14.0).clamp(16.0, 50.0) as usize;
+                theme::title(ui, &short(&chat.title, max_title_len));
                 ui.weak(format!("{} messaggi · {}", chat.count, chat.jid));
             });
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 let busy = self.export.as_ref().is_some_and(|t| t.ready().is_none());
-                if ui.add_enabled(!busy, egui::Button::new("⬇ HTML (Stampa/PDF)")).on_hover_text("Esporta la chat in formato HTML pronto da aprire e stampare in PDF").clicked() {
-                    if let Some(dest) = save_dialog(&format!("WhatsApp - {}.html", chat.title)) {
-                        let (id, f, tz, title) = (chat.id, self.applied.clone(), tz_offset_min(), chat.title.clone());
-                        self.export = Some(tasks::load(ui.ctx(), "Esportazione chat HTML", env.backup, move |cx| {
-                            imancraft_core::export::export_whatsapp_html(&title, cx, id, &f, tz, &dest)
-                        }));
-                    }
-                }
-                if ui.add_enabled(!busy, egui::Button::new("⬇ XLSX (Excel)")).on_hover_text("Esporta la chat in formato foglio di calcolo Excel").clicked() {
-                    if let Some(dest) = save_dialog(&format!("WhatsApp - {}.xlsx", chat.title)) {
-                        let (id, f, tz) = (chat.id, self.applied.clone(), tz_offset_min());
-                        self.export = Some(tasks::load(ui.ctx(), "Esportazione chat XLSX", env.backup, move |cx| {
-                            imancraft_core::export::export_whatsapp_xlsx(cx, id, &f, tz, &dest)
-                        }));
-                    }
-                }
-                for (label, fmt) in [("⬇ CSV (Excel)", ExportFormat::Csv), ("⬇ TXT", ExportFormat::Txt)] {
-                    if ui.add_enabled(!busy, egui::Button::new(label)).on_hover_text("Esporta la chat con i filtri attivi").clicked() {
-                        let ext = if fmt == ExportFormat::Csv { "csv" } else { "txt" };
-                        if let Some(dest) = save_dialog(&format!("WhatsApp - {}.{ext}", chat.title)) {
-                            let (id, f, tz) = (chat.id, self.applied.clone(), tz_offset_min());
-                            self.export = Some(tasks::load(ui.ctx(), "Esportazione chat", env.backup, move |cx| {
-                                let (_, text) = wa::export(cx, id, &f, fmt, tz)?;
-                                std::fs::write(&dest, text)?;
-                                Ok(())
-                            }));
-                        }
-                    }
-                }
-
-                if ui.selectable_label(self.gallery.is_some(), "🖼 Media, documenti e link").clicked() {
+                if ui.selectable_label(self.gallery.is_some(), "Media e link").clicked() {
                     self.gallery = if self.gallery.is_some() {
                         None
                     } else {
@@ -550,6 +521,41 @@ impl State {
                         Some(tasks::load(ui.ctx(), "Media della chat", env.backup, move |cx| wa::media(cx, id)))
                     };
                 }
+                ui.menu_button("⬇ Esporta", |ui| {
+                    if ui.add_enabled(!busy, egui::Button::new("HTML (Stampa / PDF)")).on_hover_text("Esporta la chat in formato HTML pronto da aprire e stampare in PDF").clicked() {
+                        if let Some(dest) = save_dialog(&format!("WhatsApp - {}.html", chat.title)) {
+                            let (id, f, tz, title) = (chat.id, self.applied.clone(), tz_offset_min(), chat.title.clone());
+                            self.export = Some(tasks::load(ui.ctx(), "Esportazione chat HTML", env.backup, move |cx| {
+                                imancraft_core::export::export_whatsapp_html(&title, cx, id, &f, tz, &dest)
+                            }));
+                            ui.close();
+                        }
+                    }
+                    if ui.add_enabled(!busy, egui::Button::new("XLSX (Excel)")).on_hover_text("Esporta la chat in formato foglio di calcolo Excel").clicked() {
+                        if let Some(dest) = save_dialog(&format!("WhatsApp - {}.xlsx", chat.title)) {
+                            let (id, f, tz) = (chat.id, self.applied.clone(), tz_offset_min());
+                            self.export = Some(tasks::load(ui.ctx(), "Esportazione chat XLSX", env.backup, move |cx| {
+                                imancraft_core::export::export_whatsapp_xlsx(cx, id, &f, tz, &dest)
+                            }));
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    for (label, fmt) in [("CSV (Excel)", ExportFormat::Csv), ("TXT (Testo)", ExportFormat::Txt)] {
+                        if ui.add_enabled(!busy, egui::Button::new(label)).on_hover_text("Esporta la chat con i filtri attivi").clicked() {
+                            let ext = if fmt == ExportFormat::Csv { "csv" } else { "txt" };
+                            if let Some(dest) = save_dialog(&format!("WhatsApp - {}.{ext}", chat.title)) {
+                                let (id, f, tz) = (chat.id, self.applied.clone(), tz_offset_min());
+                                self.export = Some(tasks::load(ui.ctx(), "Esportazione chat", env.backup, move |cx| {
+                                    let (_, text) = wa::export(cx, id, &f, fmt, tz)?;
+                                    std::fs::write(&dest, text)?;
+                                    Ok(())
+                                }));
+                                ui.close();
+                            }
+                        }
+                    }
+                });
                 if busy {
                     ui.spinner();
                 }

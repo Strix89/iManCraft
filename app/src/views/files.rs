@@ -102,10 +102,10 @@ impl State {
         TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
-            .column(Column::remainder().at_least(260.0))
-            .column(Column::exact(90.0))
-            .column(Column::exact(130.0))
-            .column(Column::exact(150.0))
+            .column(Column::remainder().at_least(140.0))
+            .column(Column::initial(80.0).at_least(60.0))
+            .column(Column::initial(120.0).at_least(90.0))
+            .column(Column::initial(100.0).at_least(70.0))
             .header(22.0, |mut h| {
                 for t in ["NOME", "DIMENSIONE", "MODIFICATO", ""] {
                     h.col(|ui| {

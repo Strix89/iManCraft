@@ -336,17 +336,18 @@ pub fn bubble(ui: &mut egui::Ui, p: &Palette, me: bool, _id: impl std::hash::Has
     }
 }
 
-/// Pannello laterale sinistro con margine verso il contenuto.
+/// Pannello laterale sinistro con margine verso il contenuto e dimensioni responsive.
 pub fn side_panel(id: &str, p: &Palette) -> egui::Panel {
     egui::Panel::left(id.to_owned())
         .frame(Frame::new().fill(p.bg).inner_margin(Margin { left: 0, right: 14, top: 0, bottom: 0 }))
-        .default_size(320.0)
-        .size_range(220.0..=540.0)
+        .default_size(280.0)
+        .size_range(200.0..=440.0)
 }
 
-/// Filtro testuale standard per le liste.
+/// Filtro testuale standard per le liste adattabile allo spazio orizzontale disponibile.
 pub fn filter_box(ui: &mut egui::Ui, text: &mut String, hint: &str) -> bool {
-    ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(260.0)).changed()
+    let desired_w = (ui.available_width() - 4.0).clamp(140.0, 300.0);
+    ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(desired_w)).changed()
 }
 
 #[cfg(test)]
@@ -396,6 +397,72 @@ mod tests {
                 });
             });
             out.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn test_responsive_resizing_various_resolutions() {
+        let p = Palette::new(true, [76, 141, 255]);
+        let viewports = [
+            (800.0, 600.0),
+            (980.0, 620.0),
+            (1280.0, 720.0),
+            (1440.0, 900.0),
+            (1920.0, 1080.0),
+        ];
+
+        for (width, height) in viewports {
+            let ctx = egui::Context::default();
+            let mut out = ctx.run_ui(Default::default(), |ui| {
+                ui.set_width(width);
+                ui.set_height(height);
+
+                // Rail navigation
+                egui::Panel::left("rail").exact_size(86.0).show(ui, |_ui| {});
+
+                // CentralPanel
+                egui::CentralPanel::default().frame(Frame::new().inner_margin(Margin::same(14))).show(ui, |ui| {
+                    let mut side_width = 0.0;
+                    super::side_panel("test-side", &p).show(ui, |ui| {
+                        let avail = ui.available_width();
+                        let mut filter_text = String::new();
+                        super::filter_box(ui, &mut filter_text, "Cerca...");
+                        side_width = ui.min_size().x;
+                        assert!(side_width <= 440.0, "Side panel wider than maximum limit: {side_width} > 440.0 at viewport {width}x{height}");
+                        assert!(avail >= 140.0, "Filter box available space too small: {avail} < 140.0 at viewport {width}x{height}");
+                    });
+
+                    let remaining_w = ui.available_width();
+                    assert!(remaining_w > 100.0, "Central panel collapsed below 100px: {remaining_w} at viewport {width}x{height}");
+
+                    // Test chat bubble fitting in remaining space
+                    let right_limit = ui.cursor().min.x + remaining_w;
+                    let resp = bubble(ui, &p, true, "resp_test", |ui| {
+                        ui.label("Messaggio di verifica responsive per egui");
+                    });
+                    assert!(resp.rect.max.x <= right_limit + 1.0, "Bubble clipped outside screen: {} > {} at {width}x{height}", resp.rect.max.x, right_limit);
+                });
+            });
+            out.textures_delta.clear();
+        }
+    }
+
+    #[test]
+    fn test_modal_clamping_on_small_screens() {
+        let screens = [
+            Vec2::new(800.0, 600.0),
+            Vec2::new(980.0, 620.0),
+            Vec2::new(1280.0, 720.0),
+        ];
+
+        for screen_size in screens {
+            let modal_w = (screen_size.x - 32.0).clamp(320.0, 560.0);
+            let modal_h = (screen_size.y - 40.0).clamp(300.0, 480.0);
+
+            assert!(modal_w <= screen_size.x, "Modal width exceeds screen: {modal_w} > {}", screen_size.x);
+            assert!(modal_h <= screen_size.y, "Modal height exceeds screen: {modal_h} > {}", screen_size.y);
+            assert!(modal_w >= 320.0, "Modal width too small for content: {modal_w}");
+            assert!(modal_h >= 300.0, "Modal height too small for content: {modal_h}");
         }
     }
 }
